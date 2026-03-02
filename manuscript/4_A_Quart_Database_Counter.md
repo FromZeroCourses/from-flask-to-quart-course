@@ -227,7 +227,7 @@ As we saw earlier, `python-dotenv` will load the variables in `.quartenv` and lo
 
 ## Application Setup <!-- 4.4 -->
 
-At this point we’re ready to start building our Quart counter application. 
+At this point we’re ready to start building our Quart counter application.
 
 So start the Docker client if you haven't already, and type the following on your terminal. Make sure you're on the counter application folder.
 
@@ -259,7 +259,7 @@ We haven't initialized our local Poetry environment, and we want to do that for 
 
 First, installing the Poetry packages on the host machine allows our code editor to understand the packages and do linting so that we can see issues as we write the code.
 
-Second, this will allow us to do a "hybrid" approach where we run the application on the host machine, but connect to the database on the Docker container, which allows us to run the application as well as tests without having to rebuild the web Docker container. 
+Second, this will allow us to do a "hybrid" approach where we run the application on the host machine, but connect to the database on the Docker container, which allows us to run the application as well as tests without having to rebuild the web Docker container.
 
 For example, in my Visual Studio Code editor, I can have tests run from the UI or start/stop the application with one button. I have added the `vscode` configuration on the repository if you want to add it to your folder by heading over [to this URL](https://fmze.co/fftq-4.4.2).
 
@@ -293,7 +293,7 @@ async def db_connection():
     return database
 ```
 
-First we will import the `Datbase` class from the `databases` package, which gives us asynchronous connection to our Postgres instance.
+First we will import the `Database` class from the `databases` package, which gives us asynchronous connection to our Postgres instance.
 
 We’ll also need to import the `current_app` from `quart`. Think of the `current_app` as the currently running instance of the Quart application. We’ll need it to read the settings that we’ve set for the database connection.
 

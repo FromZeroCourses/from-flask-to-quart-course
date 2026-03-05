@@ -62,11 +62,11 @@ if __name__ == '__main__':
     waiter()
 ```
 
-Save this file as `sync.py`.
-
 As you can see, we’re simulating the cook as a function that takes an order and how long it takes to prepare it. It then simulates the cooking by doing a `time.sleep` and then prints that the order is ready.
 
 The waiter is another function that is taking the order from the customers and _synchronously_ passes them to the cook.
+
+Save this file as `sync.py`.
 
 Make sure you have at least Python 3.7 installed by doing `python3 --version` on the Mac or `python --version` on Windows. If you get less than 3.7, go ahead and upgrade using Homebrew on the Mac or Chocolatey on Windows.
 

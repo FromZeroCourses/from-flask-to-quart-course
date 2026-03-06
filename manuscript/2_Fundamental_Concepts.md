@@ -48,17 +48,20 @@ So let’s try and code the waiter and cook example using regular synchronous Py
 ```
 import time
 
+
 def waiter():
-    cook('Pasta', 8)
-    cook('Caesar Salad', 3)
-    cook('Lamb Chops', 16)
+    cook("Pasta", 8)
+    cook("Caesar Salad", 3)
+    cook("Lamb Chops", 16)
+
 
 def cook(order, time_to_prepare):
-    print(f'Getting {order} order')
+    print(f"Getting {order} order")
     time.sleep(time_to_prepare)
-    print(order, 'ready')
+    print(order, "ready")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     waiter()
 ```
 
@@ -147,9 +150,9 @@ You might be wondering, “what about the cook function?”. Well, we need to ma
 {lang=python,line-numbers=off}
 ```
 async def cook(order, time_to_prepare):
-    print(f'Getting {order} order')
+    print(f"Getting {order} order")
     await time.sleep(time_to_prepare)
-    print(order, 'ready')
+    print(order, "ready")
 ```
 
 Here’s an issue though. If we use the regular `time.sleep` function, it will block the whole execution, rendering the asynchronous program useless. In this case we need to use asyncio’s `sleep` function instead.
@@ -157,9 +160,9 @@ Here’s an issue though. If we use the regular `time.sleep` function, it will b
 {lang=python,line-numbers=off}
 ```
 async def cook(order, time_to_prepare):
-    print(f'Getting {order} order')
+    print(f"Getting {order} order")
     await asyncio.sleep(time_to_prepare)
-    print(order, 'ready')
+    print(order, "ready")
 ```
 
 Now we’re guaranteeing that while the `cook` function is asleep for those number of seconds, the program can take other incoming requests.

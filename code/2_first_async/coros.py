@@ -1,3 +1,4 @@
+import asyncio
 import time
 
 
@@ -13,5 +14,4 @@ def cook(order, time_to_prepare):
     print(order, "ready")
 
 
-if __name__ == "__main__":
-    waiter()
+asyncio.run(waiter())

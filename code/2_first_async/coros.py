@@ -2,10 +2,10 @@ import asyncio
 import time
 
 
-def waiter():
-    cook("Pasta", 8)
-    cook("Caesar Salad", 3)
-    cook("Lamb Chops", 16)
+async def waiter() -> None:
+    await cook("Pasta", 8)
+    await cook("Caesar Salad", 3)
+    await cook("Lamb Chops", 16)
 
 
 def cook(order, time_to_prepare):

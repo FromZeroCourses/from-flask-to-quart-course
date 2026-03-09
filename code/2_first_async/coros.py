@@ -8,10 +8,10 @@ async def waiter() -> None:
     await cook("Lamb Chops", 16)
 
 
-def cook(order, time_to_prepare):
-    print(f"Getting {order} order")
-    time.sleep(time_to_prepare)
-    print(order, "ready")
+async def cook(order, time_to_prepare):
+    print(f'Getting {order} order')
+    await time.sleep(time_to_prepare)
+    print(order, 'ready')
 
 
 asyncio.run(waiter())

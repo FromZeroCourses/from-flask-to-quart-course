@@ -120,7 +120,11 @@ First, we’ll need to import the `asyncio` Python standard library so that we c
 
 All the way at the bottom we’ll replace the `if __name__ == '__main__'` conditional and Instead use this new `run` method from the `asyncio` module. So what does `run` do?
 
-_Run_ essentially grabs a low level `asyncio` pseudo-server called the _running loop_. This loop is the master coordinator that oversees the suspension and resuming of tasks that are running in our code. In our example, the “cook pasta” call is a task that will run but will be paused for eight seconds. So when a request comes in and goes to that line, the loop suspends that task for eight seconds, making a note of it, and goes on to take another incoming request to start from the beginning When the call to pasta finishes for the first request, the loop resumes execution on the next line, which would be the Caesar salad line.
+_Run_ essentially grabs a low level `asyncio` pseudo-server called the _running loop_. This loop is the master coordinator that oversees the suspension and resuming of tasks that are running in our code.
+
+In our example, the “cook pasta” call is a task that will run but will be paused for eight seconds. So when a request comes in and goes to that line, the loop suspends that task for eight seconds, making a note of it, and goes on to take another incoming request to start from the beginning.
+
+When the call to pasta finishes for the first request, the loop resumes execution on the next line, which would be the Caesar salad line.
 
 The run command needs a function to execute , so we pass the `waiter` function, which is the main function on this code.
 

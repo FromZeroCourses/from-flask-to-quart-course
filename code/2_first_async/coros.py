@@ -3,9 +3,9 @@ import time
 
 
 def waiter():
-    cook("Pasta", 8)
+    cook("Pasta", 2)
     cook("Caesar Salad", 3)
-    cook("Lamb Chops", 16)
+    cook("Lamb Chops", 6)
 
 
 def cook(order, time_to_prepare):

@@ -3,9 +3,9 @@ import time
 
 
 async def waiter() -> None:
-    await cook("Pasta", 8)
+    await cook("Pasta", 2)
     await cook("Caesar Salad", 3)
-    await cook("Lamb Chops", 16)
+    await cook("Lamb Chops", 6)
 
 
 async def cook(order: str, time_to_prepare: int) -> None:

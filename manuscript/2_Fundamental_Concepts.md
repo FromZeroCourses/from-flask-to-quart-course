@@ -50,9 +50,9 @@ import time
 
 
 def waiter():
-    cook("Pasta", 8)
+    cook("Pasta", 2)
     cook("Caesar Salad", 3)
-    cook("Lamb Chops", 16)
+    cook("Lamb Chops", 6)
 
 
 def cook(order, time_to_prepare):
@@ -105,9 +105,9 @@ import time
 
 
 async def waiter() -> None:
-    cook("Pasta", 8)
+    cook("Pasta", 2)
     cook("Caesar Salad", 3)
-    cook("Lamb Chops", 16)
+    cook("Lamb Chops", 6)
 
 
 async def cook(order: str, time_to_prepare: int) -> None:
@@ -125,7 +125,7 @@ All the way at the bottom we’ll replace the `if __name__ == '__main__'` condit
 
 _Run_ essentially grabs a low level `asyncio` pseudo-server called the _running loop_. This loop is the master coordinator that oversees the suspension and resuming of tasks that are running in our code.
 
-In our example, the “cook pasta” call is a task that will run but will be paused for eight seconds. So when a request comes in and goes to that line, the loop suspends that task for eight seconds, making a note of it, and goes on to take another incoming request to start from the beginning.
+In our example, the “cook pasta” call is a task that will run but will be paused for two seconds. So when a request comes in and goes to that line, the loop suspends that task for two seconds, making a note of it, and goes on to take another incoming request to start from the beginning.
 
 When the call to pasta finishes for the first request, the loop resumes execution on the next line, which would be the Caesar salad line.
 
@@ -138,9 +138,9 @@ These changes are not enough to make our code asynchronous, though. We need to t
 {lang=python,line-numbers=on}
 ```
 async def waiter() -> None:
-    await cook("Pasta", 8)
+    await cook("Pasta", 2)
     await cook("Caesar Salad", 3)
-    await cook("Lamb Chops", 16)
+    await cook("Lamb Chops", 6)
 ```
 
 We declare the `waiter` as an asynchronous function by prepending it with he `async` keyword. Once we do that, we are then able to tell `asyncio` what asynchronous tasks will happen inside the function by prepending them with the `await` keyword.
@@ -297,7 +297,7 @@ TypeError: object NoneType can't be used in 'await' expression
 
 Say what? This error seems very strange at first.
 
-What’s actually happening is that time.sleep() is not an _awaitable_ object and thus, It returns `None` back to the caller, so you get the exception after 8 seconds and not immediately.
+What’s actually happening is that time.sleep() is not an _awaitable_ object and thus, It returns `None` back to the caller, so you get the exception after 2 seconds and not immediately.
 
 On the other hand, the `asyncio.sleep` is a coroutine itself, which means it returns an awaitable or coroutine object that then can be bookmarked by the loop so that it can go ahead and pick up other requests until the sleep is done.
 

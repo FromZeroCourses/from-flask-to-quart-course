@@ -133,7 +133,7 @@ The run command needs a function to execute , so we pass the `waiter` function, 
 
 _Run_ also takes care of the cleanup, so when the whole code is run, it will gracefully disconnect from the loop.
 
-These changes are not enough to make our code asynchronous, though. We need to tell `asyncio` what functions and what tasks will be run asynchronously. So let’s change the`waiter` function as follows.
+These changes are not enough to make our code asynchronous, though. We need to tell `asyncio` what functions and what tasks will be run asynchronously. So let’s change the `waiter` function as follows.
 
 {lang=python,line-numbers=on}
 ```

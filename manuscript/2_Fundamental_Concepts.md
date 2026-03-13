@@ -96,9 +96,7 @@ Those lamb chops take a long time for sure!
 
 ## Our First Async Program <!-- 2.3 -->
 
-So now, we’ll convert this program to use the `asyncio` library and get a feel of how to write this code asynchronously.
-
-So let’s copy the `sync.py` file on a new file called `coros.py` with the following code.
+So now, we’ll convert this program to use the `asyncio` library and get a feel of how to write this code asynchronously. So let’s copy the `sync.py` file on a new file called `coros.py` with the following code.
 
 {lang=python,line-numbers=off}
 ```

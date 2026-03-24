@@ -283,6 +283,7 @@ When you execute that we get this very cryptic error:
 
 {lang=bash,line-numbers=off}
 ```
+$ python3 coros.py
 Traceback (most recent call last):
   File "coros.py", line 16, in <module>
     asyncio.run(waiter())
@@ -332,6 +333,7 @@ If you try to execute this code, you will see the following error:
 
 {lang=bash,line-numbers=off}
 ```
+$ python3 coros.py
 coros.py:5: RuntimeWarning: coroutine 'cook' was never awaited
 ```
 

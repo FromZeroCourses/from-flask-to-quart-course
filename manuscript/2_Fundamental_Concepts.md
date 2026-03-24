@@ -263,7 +263,7 @@ This looks more like what we were expecting before in terms of efficiency: the w
 
 As you start making the transition to developing with asynchronous patterns, there are some things you need to be on the lookout for. Some of the common ones I encounter often are the following.
 
-### Calling a Blocking Function from an Coroutine <!-- 2.5.1 -->
+### Calling a Blocking Function from a Coroutine <!-- 2.5.1 -->
 
 One of the most dangerous ones is the introduction of a synchronous function inside an asynchronous one.
 
@@ -375,3 +375,4 @@ What happens here is that the `main` coroutine is executed, but since the task i
 So now if you see a `not consumed` error, you know what to look for in your code.
 
 Again, these issues become easier to deal with once you practice coding with asynchronous patterns, so don’t be afraid and just jump into the water. The benefits far outweigh the pitfalls.
+

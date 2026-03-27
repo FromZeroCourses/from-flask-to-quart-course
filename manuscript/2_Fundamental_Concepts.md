@@ -372,7 +372,7 @@ I am executed
 
 What happens here is that the `main` coroutine is executed, but since the task inside is never awaited, the execution ends, and the `asyncio.sleep` coroutine never has a chance to be run.
 
-So now if you see a `not consumed` error, you know what to look for in your code.
+So now if you see a `never awaited` error, you know what to look for in your code.
 
 Again, these issues become easier to deal with once you practice coding with asynchronous patterns, so don’t be afraid and just jump into the water. The benefits far outweigh the pitfalls.
 

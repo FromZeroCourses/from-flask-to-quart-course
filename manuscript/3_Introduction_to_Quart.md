@@ -36,21 +36,19 @@ And with that, let's go ahead and install Quart.
 
 ## Installing Quart and Hello World <!-- 3.2 -->
 
-In this lesson we're going to install Quart. Make sure you have at least Python 3.7 installed.
+In this lesson we're going to install Quart. Make sure you have at least Python 3.9 installed.
 
-Next, we're going to install the Poetry package manager. Poetry allows us to handle package management for our Python applications and replaces the previous `virtualenv` workflow. It's better than using a `requirements.txt` because it tracks package dependencies in more detail, avoiding the issues we had sometimes where package upgrades would break our application.
+Next, we're going to install the `uv` package manager. `uv` is an extremely fast Python package and project manager that replaces the previous `virtualenv` and `pip` workflow. It's better than using a `requirements.txt` because it tracks package dependencies in a lockfile, avoiding the issues we had sometimes where package upgrades would break our application.
 
-Check if you have Poetry installed by typing `poetry --version` in your terminal. If you don't, follow the Poetry installation instructions in the [Poetry docs page](https://python-poetry.org/docs/#installation).
+Check if you have `uv` installed by typing `uv --version` in your terminal. If you don't, follow the installation instructions in the [uv docs page](https://docs.astral.sh/uv/getting-started/installation/).
 
-To create our first Quart application folder, we will use Poetry to set that up for us. So navigate to the folder where you keep your Python applications. It can be your user's home directory or a completely different directory. Just do a `cd` to it.
+To create our first Quart application folder, we will use `uv` to set that up for us. So navigate to the folder where you keep your Python applications. It can be your user's home directory or a completely different directory. Just do a `cd` to it.
 
-Next, let's create a folder for our Quart project, with `mkdir quart-hello` and type `cd quart-hello` to start the process.
+Now let's create our Quart project. Type `uv init quart-hello` and then `cd quart-hello`. This will create a project folder with a `pyproject.toml` and a few starter files.
 
-Now we'll initialize this folder to be a Poetry project. Poetry has an `init` module that can ask some details about the project, but for this time, we'll just initialize it with a simple configuration, so type `poetry init -n`. This will create a `pyproject.toml` without too much information.
+One of the nice things about `uv` is that it handles virtual environments automatically. You don't need to create or activate one yourself. When you run commands with `uv run`, it takes care of everything for you.
 
-Next, we want to create the virtual environment that Poetry will use, so type `poetry shell`. Poetry will create the virtual environment folder in your User directory and enable it automatically.
-
-We now install `Quart` by doing `poetry add quart`. Poetry will add Quart and a bunch of other dependencies.
+We now install `Quart` by doing `uv add quart`. This will add Quart and all its dependencies, and create a `uv.lock` lockfile to keep track of exact versions.
 
 Open your favorite code editor and create a file called `hello.py` in the root folder.
 
@@ -63,9 +61,9 @@ from quart import Quart
 app = Quart(__name__)
 
 
-@app.route("/")
+@app.route(“/”)
 async def hello():
-    return "Hello World!"
+    return “Hello World!”
 
 
 app.run()
@@ -79,7 +77,7 @@ Finally we need to make the app start with `app.run()`.
 
 Save the file.
 
-Before we can run it, we need to define some environment variables, just like we did with Flask. In order for that to work, we're going to install the `python-dotenv` library, which allows us to create an `env` file to be loaded when Quart runs. So on the terminal type: `poetry add python-dotenv` and then create a `.quartenv` file in the root folder as follows:
+Before we can run it, we need to define some environment variables, just like we did with Flask. In order for that to work, we're going to install the `python-dotenv` library, which allows us to create an `env` file to be loaded when Quart runs. So on the terminal type: `uv add python-dotenv` and then create a `.quartenv` file in the root folder as follows:
 
 {lang=python,line-numbers=on}
 ```
@@ -88,10 +86,11 @@ QUART_ENV=development
 SECRET_KEY='my_secret_key'
 ```
 
-We're now ready to run our first Quart app. Just type: `poetry run quart`. You will be notified that the application is running on port 5000.
+We're now ready to run our first Quart app. Just type: `uv run quart run`. You will be notified that the application is running on port 5000.
 
 {lang=bash,line-numbers=off}
 ```
+$ uv run quart run
 Running on http://127.0.0.1:5000 (CTRL + C to quit)
 ```
 
@@ -126,10 +125,10 @@ And change the `hello` function as follows:
 
 {lang=python,line-numbers=on,starting-line-number=6}
 ```
-@app.route("/")
+@app.route(“/”)
 async def hello():
-    name = "World!"
-    return await render_template("hello.html", name=name)
+    name = “World!”
+    return await render_template(“hello.html”, name=name)
 ```
 
 Did you notice that? For the first time we're using the `await` keyword. Why do you think that is?

@@ -1,12 +1,11 @@
-from quart import Quart, render_template
+from quart import Quart
 
 app = Quart(__name__)
 
 
 @app.route("/")
 async def hello():
-    name = "World!"
-    return await render_template("hello.html", name=name)
+    return "Hello World!"
 
 
 app.run()

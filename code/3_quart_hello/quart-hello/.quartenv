@@ -1,3 +1,0 @@
-QUART_APP='hello'
-QUART_ENV=development
-SECRET_KEY='my_secret_key'

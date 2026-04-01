@@ -1,0 +1,6 @@
+[project]
+name = "quart-hello"
+version = "0.1.0"
+description = ""
+requires-python = ">=3.9"
+dependencies = []

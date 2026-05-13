@@ -114,14 +114,14 @@ For that, we'll create a template folder so that we can render the page more dyn
 </HTML>
 ```
 
-In the `hello.py` file add `render_template` to the Quart import on line 1:
+In the hello py file add "render_template" to the Quart import on line one.
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
 from quart import Quart, render_template
 ```
 
-And change the `hello` function as follows:
+And change the `hello` function as follows.
 
 {lang=python,line-numbers=on,starting-line-number=6}
 ```
@@ -147,3 +147,4 @@ As you can see by now, things are not so different from what this application wo
 Check out the full code [here](https://fmze.co/fftq-3).
 
 Let's now tackle how to build our first database driven Quart application.
+

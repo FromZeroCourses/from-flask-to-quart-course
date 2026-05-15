@@ -135,11 +135,14 @@ Did you notice that? For the first time we're using the `await` keyword. Why do 
 
 If you said that `render_template` is a coroutine, you are right. Rendering a template can take some time, so Quart hands that off to a coroutine so that it can service other requests until the template is rendered.
 
-Try taking out the `await` keyword, run the application and reload the page in the browser. You will get the following error:
+Try taking out the `await` keyword, run the application and reload the page in the browser. You will see the following error in the terminal where the server is running:
 
-{lang=python,line-numbers=off}
+{lang=bash,line-numbers=off}
 ```
-TypeError: 'coroutine' object is not iterable
+$ uv run quart run
+...
+TypeError: The response value type (coroutine) is not valid
+RuntimeWarning: coroutine 'render_template' was never awaited
 ```
 
 As you can see by now, things are not so different from what this application would look like in Flask. Of course, this is a very simple app, so, as we make things more complex, you will definitely start to see the differences.

@@ -141,7 +141,6 @@ Try taking out the `await` keyword, run the application and reload the page in t
 ```
 $ uv run quart run
 ...
-TypeError: The response value type (coroutine) is not valid
 RuntimeWarning: coroutine 'render_template' was never awaited
 ```
 

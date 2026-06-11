@@ -146,7 +146,7 @@ RuntimeWarning: coroutine 'render_template' was never awaited
 
 As you can see by now, things are not so different from what this application would look like in Flask. Of course, this is a very simple app, so, as we make things more complex, you will definitely start to see the differences.
 
-Check out the full code [here](https://fmze.co/fftq-3).
+Check out the full code [here](https://fmze.co/fftq-3.2.2).
 
 Let's now tackle how to build our first database driven Quart application.
 

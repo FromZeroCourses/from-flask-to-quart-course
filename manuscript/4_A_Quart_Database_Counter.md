@@ -61,17 +61,18 @@ RUN apt-get update && apt-get install -y \
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=on
 
-# Install poetry
-RUN pip3 install poetry
+# Install uv
+RUN pip3 install uv
 
 # set "counter_app" as the working directory from which CMD, RUN, ADD references
 WORKDIR /counter_app
 
-# setup poetry
+# keep the virtual environment outside the mounted project directory
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+
+# setup uv
 COPY pyproject.toml /counter_app/
-RUN poetry config virtualenvs.create true \
-    && poetry config virtualenvs.in-project false \
-    && poetry install --no-interaction
+RUN uv sync --no-install-project
 
 # now copy all the files in this directory to /code
 COPY . .
@@ -80,22 +81,22 @@ COPY . .
 EXPOSE 5000
 
 # Define our command to be run when launching the container
-CMD poetry run quart run --host 0.0.0.0
+CMD uv run quart run --host 0.0.0.0
 ```
 
 First we define the base image as an Ubuntu 20.04 image.
 
 Next we install all the Ubuntu packages we will need. We'll also turn off the disruptive pip version check prompts.
 
-Next, we install Poetry using `pip3`.
+Next, we install `uv`, our package manager, using `pip3`.
 
 We then create the `counter_app` directory in the Docker instance and set it as the default location for the code.
 
-At this point we need to set up Poetry, so we copy the `pyproject.toml` file to prepare the install. We then set some flags for Poetry to work best and install all the packages.
+At this point we set up `uv`. We point its virtual environment to a location outside our project directory, so it doesn't get overwritten when Docker mounts our local code as a volume. We then copy the `pyproject.toml` file and run `uv sync` to install all the packages.
 
 Right after that, we copy the contents of the local directory into the `counter_app` directory using the `COPY` command.
 
-Once all the code in is place, we open the `5000` port and invoke the `poetry run` command.
+Once all the code in is place, we open the `5000` port and invoke the `uv run` command.
 
 [Save the file](https://fmze.co/fftq-4.2.1).
 
@@ -174,16 +175,17 @@ So let’s go ahead and start setting up our Quart counter application. Like I�
 
 One new thing we’ll use here is Alembic for database migrations. Alembic is what powers Flask-Migrations under the hood. Even though it’s a bit more complicated to set it up the first time, we will be using this application as a boilerplate when we create other database-driven Quart applications down the road, so we won’t have to repeat the setup from scratch again.
 
-Let's initialize the Poetry environment with Quart and python-dot-env. You should have Poetry installed from the previous module, but if you haven't go ahead and install it by following the instructions [on this page](https://python-poetry.org/docs/#installation).
+Let's initialize the uv project with Quart and python-dot-env. You should have uv installed from the previous module, but if you haven't go ahead and install it by following the instructions [on this page](https://docs.astral.sh/uv/getting-started/installation/).
 
-So type the following command: 
+So type the following commands: 
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry init -n --name counter_app --python ^3.7 --dependency quart@0.15.1 --dependency python-dotenv@0.10.1`.
+$ uv init --bare --name counter_app --python 3.7
+$ uv add --no-sync quart==0.15.1 python-dotenv==0.10.1
 ```
 
-[This will write](https://fmze.co/fftq-4.3.1) the `pyproject.toml` but won't install the packages.
+[This will write](https://fmze.co/fftq-4.3.1) the `pyproject.toml` but won't install the packages, thanks to the `--no-sync` flag.
 
 Now let's create the Quart environment variables that will be loaded to our environment by `python-dotenv`.
 
@@ -244,20 +246,18 @@ We’ll install some database packages we will need. The first is `psycopg2-bina
 
 The third, as we mentioned earlier, is the SQLAlchemy library, but even though we’ll install the whole package, we’ll be using the Core module for our application.
 
-So open the `pyproject.toml` file and add the following on the `[tool.poetry.dependencies]` section:
+So add the following packages with `uv add`. The `--no-sync` flag declares them in `pyproject.toml` without installing them just yet:
 
-{lang=python,line-numbers=on,starting-line-number=11}
+{lang=bash,line-numbers=off}
 ```
-psycopg2-binary = "2.9.1"
-databases = {version = "0.4.1", extras = ["postgresql"]}
-sqlalchemy = "1.4"
+$ uv add --no-sync psycopg2-binary==2.9.1 "databases[postgresql]==0.4.1" sqlalchemy==1.4
 ```
 
 [Save the file](https://fmze.co/fftq-4.4.1).
 
-We haven't initialized our local Poetry environment, and we want to do that for two reasons:
+We haven't installed our packages locally yet, and we want to do that for two reasons:
 
-First, installing the Poetry packages on the host machine allows our code editor to understand the packages and do linting so that we can see issues as we write the code.
+First, installing the packages on the host machine allows our code editor to understand the packages and do linting so that we can see issues as we write the code.
 
 Second, this will allow us to do a "hybrid" approach where we run the application on the host machine, but connect to the database on the Docker container, which allows us to run the application as well as tests without having to rebuild the web Docker container.
 
@@ -265,11 +265,11 @@ For example, in my Visual Studio Code editor, I can have tests run from the UI o
 
 Once the code is good to go, you can re-build the web app container and run the whole stack from Docker.
 
-So stop the Docker compose with Control-C and go ahead and install all the Poetry packages by doing:
+So stop the Docker compose with Control-C and go ahead and install all the packages by doing:
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry install
+$ uv sync
 ```
 
 Once that’s done, we’ll go ahead and create our database driver file, so create a new file we’ll call `db.py`.
@@ -463,31 +463,31 @@ app = create_app()
 
 We’re now going to install Alembic to be able to do database migrations. If you’re not familiar with migrations, it’s just a way to track model changes in your codebase, so that other team members and the different environments can keep up to date as you change your database schema.
 
-So we’ll install Alembic by adding it to the `pyproject.toml` as follows:
+So we’ll add Alembic with `uv add`:
 
-{lang=python,line-numbers=on,starting-line-number=14}
+{lang=bash,line-numbers=off}
 ```
-alembic = "1.6.5"
+$ uv add --no-sync alembic==1.6.5
 ```
 
 [Save the file](https://fmze.co/fftq-4.5.1).
 
 We will now initialize the migration setup which will create both an `alembic.ini` and a `migrations` folder.
 
-But before that, we need to install all the Poetry packages we've added. 
+But before that, we need to install all the packages we've added. 
 
 So type:
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry update
+$ uv sync
 ```
 
 Now we're ready for our first migration. Just type:
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry run alembic init migrations
+$ uv run alembic init migrations
 ```
 
 You’ll notice there's a new file, `env.py` inside a new `migrations` folder. There's also a new file called `alembic.ini` in the root folder.
@@ -550,7 +550,7 @@ target_metadata = metadata
 
 This is very important to remember: any new models you add subsequently, you need to add them here.
 
-[Save the file](https://fmze.com/fftq-4.5.2).
+[Save the file](https://fmze.co/fftq-4.5.2).
 
 With all that in place, we’ll finally move to the last step: tell Alembic how to connect to the database.
 
@@ -571,11 +571,11 @@ We’re now ready to create the tables in the database using the Alembic migrati
 
 But first, make sure you're Docker database container is up and running. If it isn't, just type `docker-compose up` or start it from the Docker Desktop application or from VSCode's Docker extension.
 
-So now we're ready to create our first “migration commit”. For that just type: `poetry run alembic revision --autogenerate -m "create counter table"`
+So now we're ready to create our first “migration commit”. For that just type: `uv run alembic revision --autogenerate -m "create counter table"`
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry run alembic revision --autogenerate -m "create counter table"
+$ uv run alembic revision --autogenerate -m "create counter table"
 INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
 INFO  [alembic.runtime.migration] Will assume transactional DDL.
 INFO  [alembic.autogenerate.compare] Detected added table 'counter'
@@ -629,14 +629,14 @@ This looks good to me, so let’s apply these changes on the database by doing t
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry run alembic upgrade head
+$ uv run alembic upgrade head
 ```
 
 You will see the following:
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry run alembic upgrade head
+$ uv run alembic upgrade head
 INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
 INFO  [alembic.runtime.migration] Will assume transactional DDL.
 INFO  [alembic.runtime.migration] Running upgrade  -> 2abbbb3287d2, create counter table
@@ -689,7 +689,7 @@ Exit the Postgres server and we should be ready to run our application.
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry run quart run
+$ uv run quart run
 ```
 
 If you open `localhost:5000` you will see the first number of our counter:
@@ -709,7 +709,7 @@ docker-compose up
 
 You will see the application in `localhost:5000`.
 
-And this is very important: if you add any Poetry packages to the application, you will need to rebuild the web container doing the following Docker command:
+And this is very important: if you add any packages to the application, you will need to rebuild the web container doing the following Docker command:
 
 {lang=bash,line-numbers=off}
 ```
@@ -728,7 +728,7 @@ So let’s begin by adding those libraries to the application. So just do:
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry add pytest=6.2.1 pytest-asyncio=0.15.1
+$ uv add pytest==6.2.1 pytest-asyncio==0.15.1
 ```
 
 Ok, with that out of the way let’s see how `pytest` works.
@@ -741,7 +741,7 @@ These fixtures can live in the same test files that use them or you can put them
 
 The other difference with `unittest` is that `pytest` doesn’t require classes, although they can still be used.
 
-To follow Poetry's directory structure recommendations, we'll create a `tests` folder on the root level where the `conftest` and all the tests will live.
+To follow the standard Python directory structure, we'll create a `tests` folder on the root level where the `conftest` and all the tests will live.
 
 Then create an `__init__.py` empty file inside the `tests` folder to make sure it's recognized as a Python module.
 
@@ -932,7 +932,7 @@ We need to decorate it as an `asyncio` test, since we’ll be doing I/O operatio
 
 We then hit the test client with a request and await for the response. The data we get back is stored in the `body` variable and then check that the string “Counter: 1” is in the body.
 
-[Save the file](https://fmze.co/fftq-4.7.2) and run the test using `poetry run pytest`. 
+[Save the file](https://fmze.co/fftq-4.7.2) and run the test using `uv run pytest`. 
 
 Make sure you're running your Docker Postgres container.
 
@@ -941,7 +941,7 @@ Make sure you're running your Docker Postgres container.
 $ docker-compose up db -d
 [+] Running 1/1
  ⠿ Container app_db_1  Started 
-$ poetry run pytest
+$ uv run pytest
 ================================== test session starts ==================================
 platform darwin -- Python 3.9.7, pytest-6.2.5, py-1.11.0, pluggy-1.0.0
 rootdir: /opt/quart-db-boilerplate
@@ -970,7 +970,7 @@ from counter.models import counter_table
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry run pytest
+$ uv run pytest
 ============================= test session starts ==============================
 platform darwin -- Python 3.7.3, pytest-4.5.0, py-1.8.0, pluggy-0.13.0
 rootdir: /opt/quart-mysql-boilerplate
@@ -984,11 +984,11 @@ counter/test_counter.py . [100%]
 
  ## Completing our tests <!-- 4.8 -->
 
-We now get a green line and the "tests passed label". If you look closer, you'll notice that the print statements we added aren’t being printed. For those to be printed, you need to add a `-s` flag to the command, like so: `poetry run pytest -s`.
+We now get a green line and the "tests passed label". If you look closer, you'll notice that the print statements we added aren’t being printed. For those to be printed, you need to add a `-s` flag to the command, like so: `uv run pytest -s`.
 
 {lang=bash,line-numbers=off}
 ```
-$ poetry run pytest -s
+$ uv run pytest -s
 ================================== test session starts ==================================
 platform darwin -- Python 3.9.7, pytest-6.2.5, py-1.11.0, pluggy-1.0.0
 rootdir: /opt/quart-db-boilerplate
@@ -1033,7 +1033,7 @@ Run the test to see the result:
 
 {lang=bash,line-numbers=off}
 ```
-poetry run pytest -s
+uv run pytest -s
 ================================== test session starts ==================================
 platform darwin -- Python 3.9.7, pytest-6.2.5, py-1.11.0, pluggy-1.0.0
 rootdir: /opt/quart-db-boilerplate
@@ -1091,7 +1091,7 @@ First we create an async context with the `with` Python keyword. Inside the bloc
 
 {lang=bash,line-numbers=on}
 ```
-$ poetry run pytest -s
+$ uv run pytest -s
 ================================== test session starts ==================================
 platform darwin -- Python 3.9.7, pytest-6.2.5, py-1.11.0, pluggy-1.0.0
 rootdir: /opt/quart-db-boilerplate
@@ -1120,14 +1120,14 @@ However, we haven't updated our Web app Docker instance yet, so let's go ahead a
 $ docker-compose up --build
 ```
 
-This tells Docker to build all the services on the `docker-compose.yml` file. All the changes we've done to the Poetry packages will now be installed.
+This tells Docker to build all the services on the `docker-compose.yml` file. All the changes we've done to our packages will now be installed.
 
 The web Docker container should now be up and running and you can visit `localhost:5000` in your browser to see the whole application running.
 
 If you want to run the tests from the Docker quart web container, you can do:
 
 ```
-docker-compose run --rm web poetry run pytest -s
+docker-compose run --rm web uv run pytest -s
 ```
 
 If you are using VSCode, I have added the settings to run tests from the application. Just look for the "bottle" icon and click on it. You will see that in the first run it will detect the tests and add a testing tree.

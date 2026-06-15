@@ -33,7 +33,9 @@ Once you have Docker client running, you can check if it's properly installed, b
 $ docker run hello-world
 ```
 
-If you see a welcome message, everything is good to go. Let's start by creating our `Dockerfile`.
+If you see a welcome message, everything is good to go.
+
+Let's start by creating our `Dockerfile`.
 
 First, create the directory where the application will live. You can create this directory inside your user's home directory.
 

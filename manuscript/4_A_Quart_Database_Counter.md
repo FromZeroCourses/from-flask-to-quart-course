@@ -20,7 +20,7 @@ So let’s go ahead and start coding our Quart Postgres counter application.
 
 We now need two services to be running for our application: the Quart web server and a Postgres database server to store our data.
 
-For this and all of my other courses, I will be focusing on developing locally using Docker, as this is the preferred development environment used by professional teams. If you haven't used Docker before, don't worry, just follow the instructions. I also have a Docker for Flask course if you want to learn more about Docker.
+For this and all of my other courses, I will be focusing on developing locally using Docker, as this is the preferred development environment used by professional teams. If you haven't used Docker before, don't worry, just follow the instructions.
 
 So let's go ahead and set up our local Docker development environment.
 

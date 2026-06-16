@@ -98,7 +98,7 @@ At this point we set up `uv`. We point its virtual environment to a location out
 
 Right after that, we copy the contents of the local directory into the `counter_app` directory using the `COPY` command.
 
-Once all the code in is place, we open the `5000` port and invoke the `uv run` command.
+Once all the code is in place, we open the `5000` port and invoke the `uv run` command.
 
 [Save the file](https://fmze.co/fftq-4.2.1).
 
@@ -147,7 +147,7 @@ We then assign the name of the container to be `app_web_1` and instrust Docker C
 
 The next two statements, `stdin_open` and `tty` are added so that we can execute the Python debugger and examine it from outside the container.
 
-The rest of the web service definition is the environment variables. As you can see they are the similar to the ones we defined on the `.quartenv` file on our previous lesson, with some extra ones for the database user and password.
+The rest of the web service definition is the environment variables. As you can see they are similar to the ones we defined on the `.quartenv` file on our previous lesson, with some extra ones for the database user and password.
 
 Next we'll define the Postgres database docker instance:
 

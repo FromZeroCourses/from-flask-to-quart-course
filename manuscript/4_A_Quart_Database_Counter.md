@@ -187,7 +187,7 @@ $ uv init --bare --name counter_app --python 3.7
 $ uv add --no-sync quart==0.15.1 python-dotenv==0.10.1
 ```
 
-[This will write](https://fmze.co/fftq-4.3.1) the `pyproject.toml` but won't install the packages, thanks to the `--no-sync` flag.
+[This will write](https://fmze.co/fftq-4.3.1) the `pyproject.toml` but won't install the packages, thanks to the `--no-sync` flag. We use it because this application is going to run inside Docker, so the packages will be installed inside the container when we build it — there's no need to install them on our local machine. The flag just records them in `pyproject.toml`.
 
 Now let's create the Quart environment variables that will be loaded to our environment by `python-dotenv`.
 

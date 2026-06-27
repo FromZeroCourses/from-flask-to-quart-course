@@ -250,33 +250,14 @@ We’ll install some database packages we will need. The first is `psycopg2-bina
 
 The third, as we mentioned earlier, is the SQLAlchemy library, but even though we’ll install the whole package, we’ll be using the Core module for our application.
 
-So add the following packages with `uv add`. The `--no-sync` flag declares them in `pyproject.toml` without installing them just yet:
+Add them with `uv add`. The `--no-sync` flag just declares them in `pyproject.toml`; they get installed when Docker builds the container:
 
 {lang=bash,line-numbers=off}
 ```
 $ uv add --no-sync psycopg2-binary==2.9.1 "databases[postgresql]==0.4.1" sqlalchemy==1.4
 ```
 
-[Save the file](https://fmze.co/fftq-4.4.1).
-
-We haven't installed our packages locally yet, and we want to do that for two reasons:
-
-First, installing the packages on the host machine allows our code editor to understand the packages and do linting so that we can see issues as we write the code.
-
-Second, this will allow us to do a "hybrid" approach where we run the application on the host machine, but connect to the database on the Docker container, which allows us to run the application as well as tests without having to rebuild the web Docker container.
-
-For example, in my Visual Studio Code editor, I can have tests run from the UI or start/stop the application with one button. I have added the `vscode` configuration on the repository if you want to add it to your folder by heading over [to this URL](https://fmze.co/fftq-4.4.2).
-
-Once the code is good to go, you can re-build the web app container and run the whole stack from Docker.
-
-So stop the Docker compose with Control-C and go ahead and install all the packages by doing:
-
-{lang=bash,line-numbers=off}
-```
-$ uv sync
-```
-
-Once that’s done, we’ll go ahead and create our database driver file, so create a new file we’ll call `db.py`.
+Now we’ll go ahead and create our database driver file, so create a new file we’ll call `db.py`.
 
 {lang=python,line-numbers=on}
 ```

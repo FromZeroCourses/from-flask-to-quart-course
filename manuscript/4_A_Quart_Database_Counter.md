@@ -8,7 +8,7 @@ But before we start writing the application, we need to understand one of the ma
 
 For our original Flask database boilerplate application, we used SQLAlchemy ORM, the Python Database Object Relational Mapper. However, for async projects we can’t use the same library the same way without some form of penalization.
 
-Flask-SQLAlchemy does work with Quart using the `flask_patch` function we discussed earlier, but it doesn't yield to the event loop when it reads or writes. This will mean it cannot handle much concurrent load — [only a couple of concurrent requests](https://gitter.im/python-quart/lobby?at=5cd1da132e2caa1aa625ef83).
+Flask-SQLAlchemy does work with Quart using the `flask_patch` function we discussed earlier, but it doesn't yield to the event loop when it reads or writes. This will mean it cannot handle much concurrent load — only a couple of concurrent requests.
 
 However, we don’t need to go back to using raw SQL queries in our codebase. SQLAlchemy 2.0 ships with native `asyncio` support, so we can use the SQLAlchemy Core package to express our queries in a nice way and run them against an asynchronous engine, without sacrificing performance.
 

@@ -250,7 +250,7 @@ We’ll install some database packages we will need. The first is `psycopg2-bina
 
 The third, as we mentioned earlier, is the SQLAlchemy library, but even though we’ll install the whole package, we’ll be using the Core module for our application.
 
-Add them with `uv add`. The `--no-sync` flag just declares them in `pyproject.toml`; they get installed when Docker builds the container:
+Add them with `uv add`. The `--no-sync` flag just declares them in `pyproject.toml`; they get installed when Docker builds the container.
 
 {lang=bash,line-numbers=off}
 ```

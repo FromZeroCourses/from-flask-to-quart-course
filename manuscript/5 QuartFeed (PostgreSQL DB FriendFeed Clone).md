@@ -52,7 +52,7 @@ First rename the table to `user_table` and change the table name, which is the f
 
 The `metadata` property will still come from the `db` module so leave that.
 
-The first column, "id" will remain the same -- we still want that primary key in the table.
+The first column, "id" will remain the same. We still want that primary key in the table.
 
 The second column we'll call "username". This is the first time we'll use the "String" `sqlalchemy` type, so let's add that to the import list on line 1. We'll define the length as `15` and then set the `index` property to `True` since we want to be able to search for users quickly using the `username` as a query, and finally we'll say that this column should be unique, since no two users should have the same username.
 

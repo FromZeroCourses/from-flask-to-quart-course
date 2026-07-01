@@ -8,11 +8,11 @@ But before we start writing the application, we need to understand one of the ma
 
 For our original Flask database boilerplate application, we used SQLAlchemy ORM, the Python Database Object Relational Mapper. However, for async projects we can’t use the same library the same way without some form of penalization.
 
-Flask-SQLAlchemy does work with Quart using the `flask_patch` function we discussed earlier, but it doesn't yield to the event loop when it reads or writes. This will mean it cannot handle much concurrent load — only a couple of concurrent requests.
+Flask-SQLAlchemy does work with Quart using the `flask_patch` function we discussed earlier, but it doesn't yield to the event loop when it reads or writes. This will mean it cannot handle much concurrent load, only a couple of concurrent requests.
 
 However, we don’t need to go back to using raw SQL queries in our codebase. SQLAlchemy 2.0 ships with native `asyncio` support, so we can use the SQLAlchemy Core package to express our queries in a nice way and run them against an asynchronous engine, without sacrificing performance.
 
-To talk to Postgres asynchronously, we’ll pair that async engine with `asyncpg`, a fast async Postgres driver. No third-party wrappers needed — it’s all first-party SQLAlchemy now.
+To talk to Postgres asynchronously, we’ll pair that async engine with `asyncpg`, a fast async Postgres driver. No third-party wrappers needed. It’s all first-party SQLAlchemy now.
 
 So let’s go ahead and start coding our Quart Postgres counter application.
 
@@ -20,7 +20,7 @@ So let’s go ahead and start coding our Quart Postgres counter application.
 
 We now need two services to be running for our application: the Quart web server and a Postgres database server to store our data.
 
-For this and all of my other courses, I will be focusing on developing with Docker, as this is the preferred development environment used by professional teams. The whole point is repeatability — everything runs inside containers, so you don't have to install Python, `uv`, or Postgres on your own machine. If you haven't used Docker before, don't worry.
+For this and all of my other courses, I will be focusing on developing with Docker, as this is the preferred development environment used by professional teams. The whole point is repeatability: everything runs inside containers, so you don't have to install Python, `uv`, or Postgres on your own machine. If you haven't used Docker before, don't worry.
 
 So let's go ahead and set up our Docker development environment.
 
@@ -117,7 +117,7 @@ Next we open up port 5000 both in the host as well as in the container, as this 
 
 Then we mount the current host's (Windows or Mac computer) directory as a volume inside the container, which will be mounted as `counter_app`. This will allow us to code on the host machine and propagate those changes in the container instantly.
 
-We instruct Docker Compose that the web service depends on the `db` service to be up. On the default Compose network, services can reach each other by name, so our app will connect to the database simply at the host `db` — that's why you'll see `DB_HOST: db` below.
+We instruct Docker Compose that the web service depends on the `db` service to be up. On the default Compose network, services can reach each other by name, so our app will connect to the database simply at the host `db`. That's why you'll see `DB_HOST: db` below.
 
 The next two statements, `stdin_open` and `tty` are added so that we can execute the Python debugger and examine it from outside the container.
 
@@ -161,7 +161,7 @@ $ uv init --bare --name counter_app --python 3.12
 $ uv add --no-sync quart python-dotenv
 ```
 
-[This will write](https://fmze.co/fftq-4.3.1) the `pyproject.toml` but won't install the packages, thanks to the `--no-sync` flag. We use it because this application is going to run inside Docker, so the packages will be installed inside the container when we build it — there's no need to install them on our local machine. The flag just records them in `pyproject.toml`.
+[This will write](https://fmze.co/fftq-4.3.1) the `pyproject.toml` but won't install the packages, thanks to the `--no-sync` flag. We use it because this application is going to run inside Docker, so the packages will be installed inside the container when we build it. There's no need to install them on our local machine. The flag just records them in `pyproject.toml`.
 
 ![Dependencies install inside the container, not on the host machine](images/4.3-docker-host-container.png)
 
@@ -184,7 +184,7 @@ First, the `QUART_APP` will be the kickstarter `manage.py` file that creates an 
 
 Next we’ll define the `QUART_ENV` environment as `development` so that we have meaningful error pages. We’ll also add a `SECRET_KEY`; even though it’s not essentially needed, it’s a good practice to have it.
 
-The next four variables, `DB_USERNAME`, `DB_PASSWORD`, `DB_HOST`, and `DATABASE_NAME` will allow us to connect to the database. Notice `DB_HOST` is `db` — the name of our Postgres service in Docker Compose — since everything runs inside the container network. We'll use a generic `app` prefix for the user, password and database so that we don't have to worry when we use the same code for other applications.
+The next four variables, `DB_USERNAME`, `DB_PASSWORD`, `DB_HOST`, and `DATABASE_NAME` will allow us to connect to the database. Notice `DB_HOST` is `db`, the name of our Postgres service in Docker Compose, since everything runs inside the container network. We'll use a generic `app` prefix for the user, password and database so that we don't have to worry when we use the same code for other applications.
 
 [Save the file](https://fmze.co/fftq-4.3.2).
 
@@ -216,11 +216,11 @@ So start the Docker client if you haven't already, and let's bring up just the d
 $ docker compose up -d db
 ```
 
-Docker will start downloading the Postgres image and start the database container in the background. Be patient, this might take a few minutes on the first run, but should be faster after that. We only need the database up while we write our code — we'll build and run the web container a bit later, once the application is in place.
+Docker will start downloading the Postgres image and start the database container in the background. Be patient, this might take a few minutes on the first run, but should be faster after that. We only need the database up while we write our code. We'll build and run the web container a bit later, once the application is in place.
 
 We’ll now add the database packages we will need. The first is `sqlalchemy` with its `asyncio` extra, which gives us SQLAlchemy 2.0's native asynchronous support. The second is `asyncpg`, the async driver that actually talks to Postgres.
 
-As we mentioned earlier, we’ll be using SQLAlchemy's Core module — not the full ORM — for our application.
+As we mentioned earlier, we’ll be using SQLAlchemy's Core module, not the full ORM, for our application.
 
 Add them with `uv add`. The `--no-sync` flag just declares them in `pyproject.toml`; they get installed when Docker builds the container.
 
@@ -249,13 +249,13 @@ def get_engine():
     return create_async_engine(url, pool_size=5, max_overflow=15)
 ```
 
-First we import `MetaData` and `create_async_engine` from SQLAlchemy. The `create_async_engine` function is the async counterpart to the regular engine — it's what lets us run queries without blocking the event loop.
+First we import `MetaData` and `create_async_engine` from SQLAlchemy. The `create_async_engine` function is the async counterpart to the regular engine: it's what lets us run queries without blocking the event loop.
 
 We’ll also import the `current_app` from `quart`. Think of the `current_app` as the currently running instance of the Quart application. We’ll need it to read the settings that we’ve set for the database connection.
 
 We define an application-wide `metadata` object that will track all the models in our application, which will allow us to manage migrations when we start using `alembic`.
 
-Then, in `get_engine`, we build the connection URL from the settings. Notice the `postgresql+asyncpg` prefix — that tells SQLAlchemy to use the async `asyncpg` driver. We return an async engine with a small connection pool, which we'll reuse across requests.
+Then, in `get_engine`, we build the connection URL from the settings. Notice the `postgresql+asyncpg` prefix: that tells SQLAlchemy to use the async `asyncpg` driver. We return an async engine with a small connection pool, which we'll reuse across requests.
 
 [Save the file](https://fmze.co/fftq-4.4.3).
 
@@ -322,9 +322,9 @@ We’ll import `Blueprint` to create the `counter_app` blueprint as well as the 
 
 The only route this controller has is the root slash, which will call the `init` function.
 
-We begin by grabbing our database engine from `current_app.dbc`. Then we open a connection with `async with engine.begin()`. Using `begin()` gives us a transaction that automatically commits when the block ends successfully — so we don't have to issue manual commits.
+We begin by grabbing our database engine from `current_app.dbc`. Then we open a connection with `async with engine.begin()`. Using `begin()` gives us a transaction that automatically commits when the block ends successfully, so we don't have to issue manual commits.
 
-Inside the block, we run a `select` on the `counter_table` and fetch all the rows. In this application it will always be just one record. Notice the `await` keyword — the query execution is an asynchronous operation that yields to the event loop while it waits on the database.
+Inside the block, we run a `select` on the `counter_table` and fetch all the rows. In this application it will always be just one record. Notice the `await` keyword: the query execution is an asynchronous operation that yields to the event loop while it waits on the database.
 
 We then get to the main forking point of the script. If we don’t get any rows back, it means it’s the first time we’re running the application, so we build an `insert` statement, setting the value of the `count` column to `1`, and await it. Since this is the first time we run the application, we can safely say that the `count` variable is `1`.
 
@@ -444,9 +444,9 @@ config.set_main_option(
 )
 ```
 
-We add the project folder to the `sys.path` so Alembic can import our application modules. Then we build the database URL from the environment variables — the same ones Docker Compose passes into the container — and set it with `config.set_main_option`. Notice we use the `postgresql+asyncpg` prefix again, since Alembic will connect asynchronously too.
+We add the project folder to the `sys.path` so Alembic can import our application modules. Then we build the database URL from the environment variables, the same ones Docker Compose passes into the container, and set it with `config.set_main_option`. Notice we use the `postgresql+asyncpg` prefix again, since Alembic will connect asynchronously too.
 
-This replaces the need to hand-edit the `sqlalchemy.url` inside `alembic.ini` — that file keeps its default placeholder, because we're overriding the value here in `env.py`.
+This replaces the need to hand-edit the `sqlalchemy.url` inside `alembic.ini`. That file keeps its default placeholder, because we're overriding the value here in `env.py`.
 
 [Save the file](https://fmze.co/fftq-4.5.2).
 
@@ -698,7 +698,7 @@ By default all pytest fixtures are function-level, which means pytest will creat
 
 We load the credentials from the environment, then connect to our main database with an `AUTOCOMMIT` async engine. We need AUTOCOMMIT because `CREATE DATABASE` and `DROP DATABASE` can't run inside a transaction. We drop the test database if it exists from a previous run, then create a fresh one called the same as our app database with `_test` appended.
 
-Finally, we connect to that fresh test database and create all the tables from our models using `run_sync(metadata.create_all)` — `run_sync` lets us call SQLAlchemy's synchronous schema-creation method from our async connection.
+Finally, we connect to that fresh test database and create all the tables from our models using `run_sync(metadata.create_all)`. `run_sync` lets us call SQLAlchemy's synchronous schema-creation method from our async connection.
 
 Now here’s something you will see often with `pytest` fixtures, and that’s the use of the `yield` statement:
 
@@ -735,11 +735,11 @@ async def create_test_app(create_db):
     await app.shutdown()
 ```
 
-This is also a function-scoped fixture and we inject the `create_db` fixture into it as a dependency. That’s right: you can inject fixtures into other fixtures — but again, remember to limit the number of fixture layers to keep your tests manageable. By including `create_db` as a parent fixture, we won't need to call it directly in our tests; including `create_test_app` guarantees `create_db` runs first.
+This is also a function-scoped fixture and we inject the `create_db` fixture into it as a dependency. That’s right: you can inject fixtures into other fixtures, but again, remember to limit the number of fixture layers to keep your tests manageable. By including `create_db` as a parent fixture, we won't need to call it directly in our tests; including `create_test_app` guarantees `create_db` runs first.
 
-Inside the fixture, we create an instance of the factory `create_app` function — passing it the settings dict from `create_db` with the double asterisk — and then call the Quart app's `startup` method, which runs the `before_serving` function that creates our database engine. We yield the app to the test, and once the test is done, we call `shutdown`, which runs the `after_serving` function and disposes the engine.
+Inside the fixture, we create an instance of the factory `create_app` function, passing it the settings dict from `create_db` with the double asterisk, and then call the Quart app's `startup` method, which runs the `before_serving` function that creates our database engine. We yield the app to the test, and once the test is done, we call `shutdown`, which runs the `after_serving` function and disposes the engine.
 
-The double asterisk in front of `create_db` passes the dictionary it returned as keyword arguments, which line up with our settings variables. Remember how `create_app` takes overrides as a parameter? This is exactly why — so we can instantiate test apps pointed at the test database.
+The double asterisk in front of `create_db` passes the dictionary it returned as keyword arguments, which line up with our settings variables. Remember how `create_app` takes overrides as a parameter? This is exactly why: so we can instantiate test apps pointed at the test database.
 
 We’re almost there. We’ll create our last fixture, which will allow us to create a test client that we can use to hit the endpoints:
 
@@ -796,7 +796,7 @@ _________________________________ test_initial_response ________________________
 
 It fails!
 
-What’s the problem? The issue here is that we don't reference the `counter` model anywhere in the test, so when `metadata.create_all` runs in the `conftest.py` fixture, there are no models registered to be created — the `counter` table never gets built in the test database.
+What’s the problem? The issue here is that we don't reference the `counter` model anywhere in the test, so when `metadata.create_all` runs in the `conftest.py` fixture, there are no models registered to be created: the `counter` table never gets built in the test database.
 
 So on line 3 of the `test_counter.py` file, add the import for our model:
 
@@ -807,7 +807,7 @@ import pytest
 from counter.models import counter_table
 ```
 
-Importing the model is enough — it registers the `counter_table` with our `metadata` object, so `create_all` now knows to build it.
+Importing the model is enough: it registers the `counter_table` with our `metadata` object, so `create_all` now knows to build it.
 
 [Save the file](https://fmze.co/fftq-4.7.3) and run the test again.
 
@@ -878,7 +878,7 @@ async def test_second_response(create_test_client, create_test_app):
 
 We mark the test as async and inject both the `create_test_client` and `create_test_app` fixtures.
 
-First, we hit the homepage once, which sets the counter's value to "1" — that's because the database is created fresh for each test function. Since the previous test already checks the value on the first run, there's no need to assert it again here.
+First, we hit the homepage once, which sets the counter's value to "1", because the database is created fresh for each test function. Since the previous test already checks the value on the first run, there's no need to assert it again here.
 
 Then we hit the page a second time and assert that the response now says "Counter: 2".
 

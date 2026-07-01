@@ -1,0 +1,32 @@
+services:
+  web:
+    build: .
+    container_name: app_web_1
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./:/counter_app
+    depends_on:
+      - db
+    stdin_open: true
+    tty: true
+    environment:
+      QUART_APP: manage.py
+      QUART_ENV: development
+      PORT: 5000
+      SECRET_KEY: "you-will-never-guess"
+      DEBUG: 1
+      DB_USERNAME: app_user
+      DB_PASSWORD: app_password
+      DB_HOST: db
+      DATABASE_NAME: app
+  db:
+    image: postgres:16-alpine
+    restart: always
+    container_name: app_db_1
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: app

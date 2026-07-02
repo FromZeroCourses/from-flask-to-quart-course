@@ -409,7 +409,7 @@ So we’ll add Alembic with `uv add`:
 $ uv add --no-sync alembic
 ```
 
-[Save the file](https://fmze.co/fftq-4.5.1).
+This adds Alembic to our [`pyproject.toml`](https://fmze.co/fftq-4.5.1).
 
 Since we've added new packages (SQLAlchemy, asyncpg and now Alembic), we need to build the web container image so they're installed inside it. Everything from here runs in Docker, so let's build:
 

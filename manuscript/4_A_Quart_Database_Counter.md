@@ -420,7 +420,7 @@ $ docker compose build web
 
 This downloads the Python image and installs all our packages inside the container. The first build may take a few minutes.
 
-Now we're ready to initialize the migration setup, which will create both an `alembic.ini` file and a `migrations` folder. Because our application is asynchronous, we'll use Alembic's async template by passing the `-t async` flag. And since everything runs in Docker, we run the command inside the web container with `docker compose run`:
+Now we're ready to initialize the migration setup, which will create both an `alembic.ini` file and a `migrations` folder. Because our application is asynchronous, we'll use Alembic's async template by passing the `-t async` flag. And since everything runs in Docker, we use `docker compose run` to spin up a temporary container from our `web` service just for this one command. We add the `--rm` flag so Docker deletes that container the moment the command finishes — the files it generates are written into our project folder, not the container, so once the job's done there's nothing worth keeping around:
 
 {lang=bash,line-numbers=off}
 ```

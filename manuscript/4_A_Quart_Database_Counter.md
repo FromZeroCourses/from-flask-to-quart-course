@@ -694,11 +694,15 @@ async def create_db():
     await engine.dispose()
 ```
 
-By default all pytest fixtures are function-level, which means pytest will create the database from scratch at the beginning of each test function and destroy it at the end. This works well for testing purposes, since each test function runs in isolation.
+By default all `pytest` fixtures are function-level, which means `pytest` creates the database from scratch at the start of each test function and destroys it at the end. Each test runs in complete isolation.
 
-We load the credentials from the environment, then connect to our main database with an `AUTOCOMMIT` async engine. We need AUTOCOMMIT because `CREATE DATABASE` and `DROP DATABASE` can't run inside a transaction. We drop the test database if it exists from a previous run, then create a fresh one called the same as our app database with `_test` appended.
+First, we read the database credentials from the environment and build our connection string, along with the name of our test database — our app's database name with a test suffix added.
 
-Finally, we connect to that fresh test database and create all the tables from our models using `run_sync(metadata.create_all)`. `run_sync` lets us call SQLAlchemy's synchronous schema-creation method from our async connection.
+Next, we open a connection to our main database using an autocommit engine. We need autocommit here because you can't create or drop a database from inside a transaction.
+
+With that connection open, we drop the test database if a previous run left one behind, then create a fresh, empty one.
+
+Finally, we connect to that new test database and create all our tables from the models, using `run_sync` to call SQLAlchemy's synchronous schema-creation method from our async connection.
 
 Now here’s something you will see often with `pytest` fixtures, and that’s the use of the `yield` statement:
 
@@ -719,9 +723,9 @@ Now here’s something you will see often with `pytest` fixtures, and that’s t
     await admin.dispose()
 ```
 
-We’re going to yield the application settings to the next test or fixture that includes it. Notice we override `DATABASE_NAME` with our test database, so the app under test points at the isolated test database.
+The dictionary we `yield` becomes the settings for the next test or fixture that uses this one. Notice it overrides the database name with our test database, so the app under test points at that isolated copy.
 
-Essentially what `yield` does is send control back to the calling test, and you can define what data you want to share with it here. Once the test is completed, the rest of the commands below the yield are executed, so we put the database cleanup here, which in our case drops the test database.
+Essentially, `yield` hands control back to the calling test and pauses here — the data you list is what you share with it. When the test finishes, execution resumes right after the `yield`, running everything below it. That's why the cleanup lives here: once the test is done, we destroy the test database.
 
 Next, let’s create the Quart application fixture itself:
 

@@ -704,7 +704,7 @@ With that connection open, we drop the test database if a previous run left one 
 
 Finally, we connect to that new test database and create all our tables from the models, using `run_sync` to call SQLAlchemy's synchronous schema-creation method from our async connection.
 
-Now here’s something you will see often with `pytest` fixtures, and that’s the use of the `yield` statement:
+But the fixture isn't quite done. When a test finishes, we need to clean up after ourselves — so at the end, we destroy the test database we created.
 
 {lang=python,line-numbers=on,starting-line-number=37}
 ```
@@ -723,9 +723,9 @@ Now here’s something you will see often with `pytest` fixtures, and that’s t
     await admin.dispose()
 ```
 
-The dictionary we `yield` becomes the settings for the next test or fixture that uses this one. Notice it overrides the database name with our test database, so the app under test points at that isolated copy.
+Now for the new part you'll see all the time with `pytest`: the `yield` statement, which sits right between our setup and this cleanup. Unlike a `return`, `yield` hands control — along with a dictionary of settings — over to the test, and pauses. When the test finishes, execution picks up right after the `yield` and runs the cleanup below.
 
-Essentially, `yield` hands control back to the calling test and pauses here — the data you list is what you share with it. When the test finishes, execution resumes right after the `yield`, running everything below it. That's why the cleanup lives here: once the test is done, we destroy the test database.
+The settings we hand over override the database name with our test database, so the app being tested points at that isolated copy instead of the real one.
 
 Next, let’s create the Quart application fixture itself:
 

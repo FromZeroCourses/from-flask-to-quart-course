@@ -109,3 +109,88 @@ async def test_profile_edit_requires_login(create_test_client):
     response = await create_test_client.get("/profile/edit")
     assert response.status_code == 302
     assert "/login" in response.headers.get("Location", "")
+
+
+@pytest.mark.asyncio
+async def test_profile_edit_username(create_test_client, create_test_app):
+    await create_test_client.post(
+        "/register", form={"username": "frank", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/login", form={"username": "frank", "password": "secret123"}
+    )
+
+    response = await create_test_client.post(
+        "/profile/edit", form={"username": "frankie"}, follow_redirects=True
+    )
+    body = await response.get_data()
+    assert "@frankie" in str(body)
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "frankie")
+                )
+            ).fetchone()
+            assert row is not None
+
+            old_row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "frank")
+                )
+            ).fetchone()
+            assert old_row is None
+
+    async with create_test_client.session_transaction() as session:
+        assert session["username"] == "frankie"
+
+    # Still logged in as the renamed user afterward.
+    profile_response = await create_test_client.get("/profile/edit")
+    profile_body = await profile_response.get_data()
+    assert "frankie" in str(profile_body)
+
+
+@pytest.mark.asyncio
+async def test_profile_edit_duplicate_username(create_test_client, create_test_app):
+    await create_test_client.post(
+        "/register", form={"username": "gina", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/register", form={"username": "harry", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/login", form={"username": "harry", "password": "secret123"}
+    )
+
+    response = await create_test_client.post(
+        "/profile/edit", form={"username": "gina"}
+    )
+    body = await response.get_data()
+    assert "Username already exists" in str(body)
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "harry")
+                )
+            ).fetchone()
+            assert row is not None
+
+
+@pytest.mark.asyncio
+async def test_profile_edit_same_username_ok(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "irene", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/login", form={"username": "irene", "password": "secret123"}
+    )
+
+    response = await create_test_client.post(
+        "/profile/edit", form={"username": "irene"}
+    )
+    body = await response.get_data()
+    assert "Username already exists" not in str(body)
+    assert response.status_code == 302

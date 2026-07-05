@@ -11,13 +11,14 @@ from quart import (
     flash,
     redirect,
     render_template,
+    request,
     session,
     url_for,
 )
 from sqlalchemy import insert, select, update
 from wand.image import Image
 
-from helpers import get_user_by_username, image_url, login_required
+from helpers import get_user_by_id, get_user_by_username, image_url, login_required
 from post.models import post_table
 from relationship.models import relationship_table
 from relationship.views import EmptyForm, followers, is_following
@@ -154,19 +155,45 @@ def _save_avatar(file_storage, user_id: int) -> int:
 @login_required
 async def profile_edit() -> Union[str, Response]:
     form = await ProfileEditForm.create_form()
+    error: Optional[str] = None
+    engine = current_app.dbc  # type: ignore
+
+    async with engine.begin() as conn:
+        current_user = await get_user_by_id(conn, session["user_id"])
+
+    if request.method == "GET":
+        form.username.data = current_user.username
 
     if await form.validate_on_submit():
+        new_username = form.username.data
+        ts: Optional[int] = None
         if form.image.data:
             ts = _save_avatar(form.image.data, session["user_id"])
-            engine = current_app.dbc  # type: ignore
-            async with engine.begin() as conn:
+
+        async with engine.begin() as conn:
+            if new_username != current_user.username:
+                existing = await get_user_by_username(conn, new_username)
+                if existing is not None and existing.id != session["user_id"]:
+                    error = "Username already exists"
+
+            if not error:
+                values = {"username": new_username}
+                if ts is not None:
+                    values["image"] = ts
                 await conn.execute(
                     update(user_table)
                     .where(user_table.c.id == session["user_id"])
-                    .values(image=ts)
+                    .values(**values)
                 )
 
-        await flash("Profile updated")
-        return redirect(url_for(".profile", username=session["username"]))
+        if not error:
+            session["username"] = new_username
+            await flash("Profile updated")
+            return redirect(url_for(".profile", username=new_username))
 
-    return await render_template("user/profile_edit.html", form=form)
+    return await render_template(
+        "user/profile_edit.html",
+        form=form,
+        avatar_url=image_url(current_user.id, current_user.image),
+        error=error,
+    )

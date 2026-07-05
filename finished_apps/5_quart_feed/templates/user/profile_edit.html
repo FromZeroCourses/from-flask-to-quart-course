@@ -14,7 +14,28 @@
         {% from "_formhelpers.html" import render_field %}
 
         <form method="POST" action="{{ url_for('.profile_edit') }}" enctype="multipart/form-data" role="form">
-            {{ render_field(form.image) }}
+
+            <div class="text-center mb-3">
+                <label for="image">
+                    <img src="{{ avatar_url }}" class="rounded-circle" width="120" height="120" alt="avatar"><br>
+                    Upload image
+                </label>
+                {{ form.image(class="d-none") }}
+                {% if form.image.errors %}
+                <ul class="text-danger">
+                    {% for image_error in form.image.errors %}
+                    <li>{{ image_error }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </div>
+
+            {{ render_field(form.username) }}
+
+            {% if error %}
+            <div class="text-danger mb-3">{{ error }}</div>
+            {% endif %}
+
             {{ form.csrf_token }}
             <button type="submit" class="btn btn-primary">Save</button>
         </form>

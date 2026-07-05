@@ -1,0 +1,33 @@
+from quart import Quart
+
+from db import get_engine
+
+
+def create_app(**config_overrides):
+    app = Quart(__name__)
+    app.config.from_pyfile("settings.py")
+
+    # apply overrides for tests
+    app.config.update(config_overrides)
+
+    from user.views import user_app
+    from relationship.views import relationship_app
+    from post.views import post_app
+    from comment.views import comment_app
+    from like.views import like_app
+
+    app.register_blueprint(user_app)
+    app.register_blueprint(relationship_app)
+    app.register_blueprint(post_app)
+    app.register_blueprint(comment_app)
+    app.register_blueprint(like_app)
+
+    @app.before_serving
+    async def create_db_conn():
+        app.dbc = get_engine()
+
+    @app.after_serving
+    async def close_db_conn():
+        await app.dbc.dispose()
+
+    return app

@@ -223,9 +223,10 @@ def _save_avatar(file_storage, user_id: int) -> int:
 
 @user_app.route("/profile/delete-image", methods=["POST"])
 @login_required
-async def delete_image() -> Response:
+async def delete_image() -> Union[Response, tuple]:
     form = await EmptyForm.create_form()
     engine = current_app.dbc  # type: ignore
+    is_xhr = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
     if await form.validate_on_submit():
         async with engine.begin() as conn:
@@ -250,7 +251,14 @@ async def delete_image() -> Response:
                     .values(image=None)
                 )
 
+        if is_xhr:
+            return ("", 204)
+
         await flash("Profile image removed")
+
+    if is_xhr:
+        # CSRF/validation failed for an XHR request.
+        return ("", 400)
 
     return redirect(url_for(".profile_edit"))
 

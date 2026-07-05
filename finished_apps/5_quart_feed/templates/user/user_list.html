@@ -16,8 +16,8 @@
             {% for u in users %}
             <div class="col">
                 <div class="card text-center p-2">
-                    <a href="{{ url_for('user_app.profile', username=u.username) }}" class="text-decoration-none text-body">
-                        <img src="{{ u.avatar_url }}" class="rounded-circle mb-2" width="80" height="80" alt="avatar">
+                    <a href="{{ url_for('user_app.profile', username=u.username) }}" class="text-decoration-underline">
+                        <img src="{{ u.avatar_url }}" class="rounded-circle mb-2" width="80" height="80" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
                         <div>@{{ u.username }}</div>
                     </a>
                 </div>

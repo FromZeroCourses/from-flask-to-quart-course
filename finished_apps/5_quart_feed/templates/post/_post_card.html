@@ -1,14 +1,14 @@
 <div class="card mb-3" data-post-id="{{ post.post_id }}">
     <div class="card-body">
         <div class="d-flex align-items-center mb-2">
-            <img src="{{ post.avatar_url }}" class="rounded-circle me-2" width="40" height="40" alt="avatar">
+            <img src="{{ post.avatar_url }}" class="rounded-circle me-2" width="40" height="40" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
             <a href="{{ url_for('user_app.profile', username=post.author_username) }}">
                 @{{ post.author_username }}
             </a>
         </div>
         <p class="mb-1">{{ post.message }}</p>
-        <a href="{{ url_for('post_app.detail', post_id=post.post_id) }}" class="text-muted text-decoration-none">
-            <time class="timeago" datetime="{{ post.created.isoformat() }}">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
+        <a href="{{ url_for('post_app.detail', post_id=post.post_id) }}" class="text-muted text-decoration-underline">
+            <time class="timeago" datetime="{{ post.created.isoformat() }}" style="font-size: 0.7rem;">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
         </a>
 
         <div class="mt-2">
@@ -22,7 +22,7 @@
 
         <div class="comments mt-2">
             {% for comment in post.comments %}
-            <div><small><strong>@{{ comment.author_username }}:</strong> {{ comment.comment }}</small></div>
+            <div><small><strong><a href="{{ url_for('user_app.profile', username=comment.author_username) }}">@{{ comment.author_username }}</a>:</strong> {{ comment.comment }}</small></div>
             {% endfor %}
         </div>
 

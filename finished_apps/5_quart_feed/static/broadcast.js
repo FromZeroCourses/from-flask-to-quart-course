@@ -32,12 +32,12 @@ document.addEventListener("DOMContentLoaded", () => {
     card.innerHTML = `
       <div class="card-body">
         <div class="d-flex align-items-center mb-2">
-          <img src="${post.avatar_url}" class="rounded-circle me-2" width="40" height="40" alt="avatar">
+          <img src="${post.avatar_url}" class="rounded-circle me-2" width="40" height="40" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
           <a href="/user/${encodeURIComponent(post.author_username)}">@${escapeHtml(post.author_username)}</a>
         </div>
         <p class="mb-1">${escapeHtml(post.message)}</p>
-        <a href="/post/${post.post_id}" class="text-muted text-decoration-none">
-          <time class="timeago" datetime="${post.created}">${new Date(post.created).toLocaleString()}</time>
+        <a href="/post/${post.post_id}" class="text-muted text-decoration-underline">
+          <time class="timeago" datetime="${post.created}" style="font-size: 0.7rem;">${new Date(post.created).toLocaleString()}</time>
         </a>
 
         <div class="mt-2">
@@ -69,7 +69,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const commentsDiv = card.querySelector(".comments");
     const commentEl = document.createElement("div");
-    commentEl.innerHTML = `<small><strong>@${escapeHtml(comment.author_username)}:</strong> ${escapeHtml(comment.comment)}</small>`;
+    commentEl.innerHTML = `<small><strong><a href="/user/${encodeURIComponent(comment.author_username)}">@${escapeHtml(comment.author_username)}</a>:</strong> ${escapeHtml(comment.comment)}</small>`;
     commentsDiv.appendChild(commentEl);
   });
 

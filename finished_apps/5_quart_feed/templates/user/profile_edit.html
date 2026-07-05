@@ -17,7 +17,7 @@
 
             <div class="text-center mb-3">
                 <label for="image" style="cursor: pointer;">
-                    <img id="avatar-preview" src="{{ avatar_url }}" class="rounded-circle" width="120" height="120" alt="avatar"><br>
+                    <img id="avatar-preview" src="{{ avatar_url }}" class="rounded-circle" width="120" height="120" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';"><br>
                     <span class="link-primary text-decoration-underline" style="cursor: pointer;">Upload image</span>
                 </label>
                 {{ form.image(class="d-none") }}
@@ -30,10 +30,8 @@
                 {% endif %}
                 {% if has_custom_image %}
                 <div>
-                    <form method="POST" action="{{ url_for('.delete_image') }}">
-                        {{ delete_form.csrf_token }}
-                        <button type="submit" class="btn btn-link link-primary text-decoration-underline p-0" style="cursor: pointer;">Delete image</button>
-                    </form>
+                    <input type="hidden" id="delete-csrf" value="{{ delete_form.csrf_token._value() }}">
+                    <button type="button" id="delete-image-btn" class="btn btn-link link-primary text-decoration-underline p-0" style="cursor: pointer;">Delete image</button>
                 </div>
                 {% endif %}
             </div>
@@ -60,5 +58,23 @@
             document.getElementById('avatar-preview').src = URL.createObjectURL(this.files[0]);
         }
     });
+
+    var deleteBtn = document.getElementById('delete-image-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function () {
+            fetch("{{ url_for('user_app.delete_image') }}", {
+                method: "POST",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                body: new URLSearchParams({
+                    csrf_token: document.getElementById('delete-csrf').value
+                })
+            }).then(function (res) {
+                if (res.ok) {
+                    document.getElementById('avatar-preview').src = "/static/default_profile.png";
+                    deleteBtn.style.display = "none";
+                }
+            });
+        });
+    }
 </script>
 {% endblock %}

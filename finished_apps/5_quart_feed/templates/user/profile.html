@@ -15,13 +15,13 @@
 
         <div class="d-flex align-items-center justify-content-between mb-3">
             <div class="d-flex align-items-center">
-                <img src="{{ avatar_url }}" class="rounded-circle me-3" width="64" height="64" alt="avatar">
+                <img src="{{ avatar_url }}" class="rounded-circle me-3" width="64" height="64" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
                 <div>
                     <h3 class="mb-0">@{{ profile_user.username }}</h3>
                     <small class="text-muted">
-                        <a href="{{ url_for('user_app.followers', username=profile_user.username) }}" class="text-muted text-decoration-none">{{ follower_count }} followers</a>
+                        <a href="{{ url_for('user_app.followers', username=profile_user.username) }}" class="text-decoration-underline">{{ follower_count }} followers</a>
                         &middot;
-                        <a href="{{ url_for('user_app.following', username=profile_user.username) }}" class="text-muted text-decoration-none">{{ following_count }} following</a>
+                        <a href="{{ url_for('user_app.following', username=profile_user.username) }}" class="text-decoration-underline">{{ following_count }} following</a>
                     </small>
                 </div>
             </div>
@@ -51,7 +51,9 @@
             {% for post in posts %}
             <li class="list-group-item">
                 <div>{{ post.message }}</div>
-                <small class="text-muted">{{ post.created }}</small>
+                <a href="{{ url_for('post_app.detail', post_id=post.id) }}" class="text-muted text-decoration-underline">
+                    <time class="timeago" datetime="{{ post.created.isoformat() }}" style="font-size: 0.7rem;">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
+                </a>
             </li>
             {% endfor %}
         </ul>

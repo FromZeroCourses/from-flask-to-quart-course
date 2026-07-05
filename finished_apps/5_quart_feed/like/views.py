@@ -6,6 +6,7 @@ from sqlalchemy import delete, func, insert, select
 
 from helpers import login_required
 from like.models import like_table
+from post.models import feed_table
 from sse import ServerSentEvent, broker
 
 like_app = Blueprint("like_app", __name__)
@@ -47,11 +48,25 @@ async def toggle_like(post_id: int):
                 )
             ).scalar_one()
 
-        await broker.publish(
+            # Deliver the updated count only to pages that have this post
+            # (i.e. the users whose feed contains it), not every open page.
+            recipient_ids = [
+                r.user_id
+                for r in (
+                    await conn.execute(
+                        select(feed_table.c.user_id).where(
+                            feed_table.c.post_id == post_id
+                        )
+                    )
+                ).fetchall()
+            ]
+
+        await broker.publish_many(
+            recipient_ids,
             ServerSentEvent(
                 event="like",
                 data=json.dumps({"post_id": post_id, "like_count": like_count}),
-            )
+            ),
         )
 
     return redirect(url_for("post_app.home"))

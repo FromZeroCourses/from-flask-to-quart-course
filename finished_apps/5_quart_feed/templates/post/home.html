@@ -39,6 +39,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='broadcast.js') }}"></script>
-<script src="{{ url_for('static', filename='infinite_scroll.js') }}"></script>
+<script src="{{ asset_url('broadcast.js') }}"></script>
+<script src="{{ asset_url('infinite_scroll.js') }}"></script>
 {% endblock %}

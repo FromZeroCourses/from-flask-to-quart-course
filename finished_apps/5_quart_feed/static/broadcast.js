@@ -36,7 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <a href="/user/${encodeURIComponent(post.author_username)}">@${escapeHtml(post.author_username)}</a>
         </div>
         <p class="mb-1">${escapeHtml(post.message)}</p>
-        <a href="/post/${post.post_id}" class="text-muted text-decoration-underline">
+        <a href="${post.permalink}" class="text-muted text-decoration-underline">
           <time class="timeago" datetime="${post.created}" style="font-size: 0.7rem;">${new Date(post.created).toLocaleString()}</time>
         </a>
 

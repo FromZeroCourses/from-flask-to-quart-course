@@ -6,6 +6,7 @@ from sqlalchemy import insert, select
 from comment.forms import CommentForm
 from comment.models import comment_table
 from helpers import login_required
+from post.models import feed_table
 from sse import ServerSentEvent, broker
 from user.models import user_table
 
@@ -40,6 +41,19 @@ async def create_comment(post_id: int):
                 )
             ).fetchone()
 
+            # The recipients are exactly the users who have this post in their
+            # feed, so the live comment reaches the same pages showing the post.
+            recipient_ids = [
+                r.user_id
+                for r in (
+                    await conn.execute(
+                        select(feed_table.c.user_id).where(
+                            feed_table.c.post_id == post_id
+                        )
+                    )
+                ).fetchall()
+            ]
+
         payload = {
             "post_id": post_id,
             "comment_id": comment_id,
@@ -47,6 +61,8 @@ async def create_comment(post_id: int):
             "created": comment_row.created.isoformat(),
             "author_username": author.username,
         }
-        await broker.publish(ServerSentEvent(event="comment", data=json.dumps(payload)))
+        await broker.publish_many(
+            recipient_ids, ServerSentEvent(event="comment", data=json.dumps(payload))
+        )
 
     return redirect(url_for("post_app.home"))

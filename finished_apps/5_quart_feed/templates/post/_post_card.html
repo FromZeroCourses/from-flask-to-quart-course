@@ -7,7 +7,7 @@
             </a>
         </div>
         <p class="mb-1">{{ post.message }}</p>
-        <a href="{{ url_for('post_app.detail', post_id=post.post_id) }}" class="text-muted text-decoration-underline">
+        <a href="{{ post_url(post.uid, post.message) }}" class="text-muted text-decoration-underline">
             <time class="timeago" datetime="{{ post.created.isoformat() }}" style="font-size: 0.7rem;">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
         </a>
 

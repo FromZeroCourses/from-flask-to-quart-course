@@ -1,3 +1,6 @@
+import re
+import secrets
+import string
 from functools import wraps
 from typing import Any, Callable, Optional
 
@@ -6,6 +9,25 @@ from sqlalchemy import select
 from sqlalchemy.engine import Row
 
 from user.models import user_table
+
+# base36 (lowercase letters + digits) keeps post uids short and URL-clean.
+_UID_ALPHABET = string.ascii_lowercase + string.digits
+
+
+def generate_uid(length: int = 8) -> str:
+    """Return a short, opaque, URL-safe id for a post permalink."""
+    return "".join(secrets.choice(_UID_ALPHABET) for _ in range(length))
+
+
+def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
+    """Turn a post message into an SEO-friendly URL slug.
+
+    Lowercases, strips punctuation, and keeps the first few words so the
+    permalink reads like ``/post/ab12cd34/i-need-to-go-to-the-supermarket``.
+    """
+    words = re.sub(r"[^a-z0-9\s-]", "", (text or "").lower()).split()
+    slug = "-".join(words[:max_words])[:max_len].strip("-")
+    return slug or "post"
 
 
 def login_required(f: Callable) -> Callable:

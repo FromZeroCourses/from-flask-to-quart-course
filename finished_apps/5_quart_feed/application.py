@@ -1,6 +1,9 @@
-from quart import Quart
+import os
+
+from quart import Quart, url_for
 
 from db import get_engine
+from helpers import slugify
 
 
 def create_app(**config_overrides):
@@ -21,6 +24,26 @@ def create_app(**config_overrides):
     app.register_blueprint(post_app)
     app.register_blueprint(comment_app)
     app.register_blueprint(like_app)
+
+    @app.template_global()
+    def asset_url(filename: str) -> str:
+        """Static URL with an mtime cache-buster.
+
+        Appends ``?v=<file-mtime>`` so the URL changes whenever the file
+        changes. Reloading the page then always fetches the current asset
+        instead of a stale browser-cached copy, while unchanged files stay
+        cacheable.
+        """
+        try:
+            version = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+        except OSError:
+            version = 0
+        return url_for("static", filename=filename, v=version)
+
+    @app.template_global()
+    def post_url(uid: str, message: str) -> str:
+        """Canonical SEO permalink for a post: /post/<uid>/<slug>."""
+        return url_for("post_app.detail", uid=uid, slug=slugify(message))
 
     @app.before_serving
     async def create_db_conn():

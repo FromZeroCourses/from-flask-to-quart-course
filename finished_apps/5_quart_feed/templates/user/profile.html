@@ -51,7 +51,7 @@
             {% for post in posts %}
             <li class="list-group-item">
                 <div>{{ post.message }}</div>
-                <a href="{{ url_for('post_app.detail', post_id=post.id) }}" class="text-muted text-decoration-underline">
+                <a href="{{ post_url(post.uid, post.message) }}" class="text-muted text-decoration-underline">
                     <time class="timeago" datetime="{{ post.created.isoformat() }}" style="font-size: 0.7rem;">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
                 </a>
             </li>

@@ -31,32 +31,33 @@ document.addEventListener("DOMContentLoaded", () => {
     card.setAttribute("data-post-id", post.post_id);
     card.innerHTML = `
       <div class="card-body">
-        <div class="d-flex align-items-center mb-2">
-          <img src="${post.avatar_url}" class="rounded-circle me-2" width="40" height="40" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
-          <a href="/user/${encodeURIComponent(post.author_username)}">@${escapeHtml(post.author_username)}</a>
+        <div class="d-flex">
+          <img src="${post.avatar_url}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
+          <div class="flex-grow-1">
+            <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold entry-author">@${escapeHtml(post.author_username)}</a>
+            ${(post.reason_type === "comment" && post.reason_username)
+              ? ` <span class="text-muted small ms-1">(<a href="/user/${encodeURIComponent(post.reason_username)}">${escapeHtml(post.reason_username)}</a> commented on this)</span>`
+              : ""}
+            <p class="mb-1 entry-text">${window.linkify ? window.linkify(post.message) : escapeHtml(post.message)}</p>
+            ${(post.images && post.images.length)
+              ? `<div class="d-flex gap-2 mb-2" style="overflow-x: auto;">${post.images
+                  .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
+                  .join("")}</div>`
+              : ""}
+            <div class="ff-meta small text-muted mt-1">
+              <a href="${post.permalink}" class="ff-meta-time"><time class="timeago" datetime="${post.created}">${new Date(post.created).toLocaleString()}</time></a>
+              - <a href="#" class="ff-comment">Comment</a>
+              - <form method="POST" action="/like/${post.post_id}" class="d-inline"><input type="hidden" name="csrf_token" value="${csrfToken}"><button type="submit" class="ff-action-link">Like</button></form>
+            </div>
+            <div class="likes small text-muted mt-1"></div>
+            <div class="comments mt-2"></div>
+            <form method="POST" action="/comment/${post.post_id}" class="comment-form mt-2 d-flex d-none">
+              <input type="hidden" name="csrf_token" value="${csrfToken}">
+              <input type="text" name="comment" class="form-control form-control-sm me-2" placeholder="Add a comment...">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Send</button>
+            </form>
+          </div>
         </div>
-        <p class="mb-1">${window.linkify ? window.linkify(post.message) : escapeHtml(post.message)}</p>
-        ${(post.images && post.images.length)
-          ? `<div class="d-flex gap-2 mb-2" style="overflow-x: auto;">${post.images
-              .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
-              .join("")}</div>`
-          : ""}
-        <div class="ff-meta small text-muted mt-1">
-          <a href="${post.permalink}" class="ff-meta-time"><time class="timeago" datetime="${post.created}">${new Date(post.created).toLocaleString()}</time></a>
-          - <a href="#" class="ff-comment">Comment</a>
-          - <form method="POST" action="/like/${post.post_id}" class="d-inline"><input type="hidden" name="csrf_token" value="${csrfToken}"><button type="submit" class="ff-action-link">Like</button></form>
-          - <a href="#" class="ff-hide">Hide</a>
-        </div>
-
-        <div class="likes small text-muted mt-1"></div>
-
-        <div class="comments mt-2"></div>
-
-        <form method="POST" action="/comment/${post.post_id}" class="comment-form mt-2 d-flex d-none">
-          <input type="hidden" name="csrf_token" value="${csrfToken}">
-          <input type="text" name="comment" class="form-control form-control-sm me-2" placeholder="Add a comment...">
-          <button type="submit" class="btn btn-sm btn-outline-secondary">Send</button>
-        </form>
       </div>
     `;
     feed.prepend(card);

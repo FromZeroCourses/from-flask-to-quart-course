@@ -8,6 +8,7 @@ from comment.models import comment_table
 from utils.feed_ops import bubble_post
 from utils.helpers import login_required
 from post.models import feed_table
+from post.views import build_post_payload
 from relationship.views import followers
 from utils.sse import ServerSentEvent, broker
 from user.models import user_table
@@ -46,7 +47,8 @@ async def create_comment(post_id: int):
             # Bubble the post into the feeds of my followers (and mine), so a
             # post I comment on surfaces for the people who follow me — even if
             # they don't follow its author — tagged "<me> commented on this".
-            bubble_recipients = set(await followers(conn, session["user_id"]))
+            follower_ids = await followers(conn, session["user_id"])
+            bubble_recipients = set(follower_ids)
             bubble_recipients.add(session["user_id"])
             await bubble_post(
                 conn, post_id, bubble_recipients, session["user_id"], "comment"
@@ -65,6 +67,21 @@ async def create_comment(post_id: int):
                     )
                 ).fetchall()
             ]
+
+            # Payload to push the post itself to my followers so it shows in
+            # their feed live (not only on refresh), tagged with the reason.
+            bubble_payload = await build_post_payload(
+                conn, post_id, "comment", author.username
+            )
+
+        # Push the post to my followers first — this creates the card live if
+        # they don't already have it — then send the comment to everyone who has
+        # the post in their feed.
+        if follower_ids:
+            await broker.publish_many(
+                follower_ids,
+                ServerSentEvent(event="post", data=json.dumps(bubble_payload)),
+            )
 
         payload = {
             "post_id": post_id,

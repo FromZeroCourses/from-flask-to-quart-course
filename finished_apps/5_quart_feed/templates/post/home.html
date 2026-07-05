@@ -21,8 +21,11 @@
                     enctype="multipart/form-data">
                     <textarea name="message" class="form-control mb-2" rows="2"
                         placeholder="What's on your mind?">{{ form.message.data or '' }}</textarea>
+                    <div class="add-photos-row d-none mb-2">
+                        {{ form.image(class="form-control form-control-sm", accept="image/*") }}
+                    </div>
                     <div class="d-flex align-items-center">
-                        {{ form.image(class="form-control form-control-sm me-2", accept="image/*") }}
+                        <a href="#" class="add-photos me-3">Add photos</a>
                         {{ form.csrf_token }}
                         <button type="submit" class="btn btn-primary">Post</button>
                     </div>

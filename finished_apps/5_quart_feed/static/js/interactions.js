@@ -87,12 +87,14 @@
       return;
     }
 
-    // "Hide" action -> hide the entry (client-side).
-    var hideLink = e.target.closest(".ff-hide");
-    if (hideLink) {
+    // "Add photos" -> reveal the file input and hide the link.
+    var addPhotos = e.target.closest(".add-photos");
+    if (addPhotos) {
       e.preventDefault();
-      var hcard = hideLink.closest(".card");
-      if (hcard) hcard.style.display = "none";
+      var pform = addPhotos.closest("form");
+      var row = pform && pform.querySelector(".add-photos-row");
+      if (row) row.classList.remove("d-none");
+      addPhotos.classList.add("d-none");
       return;
     }
 

@@ -55,6 +55,47 @@ async def _post_images(conn: Any, post_id: int) -> List[Dict[str, Any]]:
     ]
 
 
+async def build_post_payload(
+    conn: Any,
+    post_id: int,
+    reason_type: Optional[str] = None,
+    reason_username: Optional[str] = None,
+) -> Dict[str, Any]:
+    """SSE 'post' payload for a post — shared by create_post and live bubbling."""
+    row = (
+        await conn.execute(
+            select(
+                post_table.c.id.label("post_id"),
+                post_table.c.uid,
+                post_table.c.message,
+                post_table.c.created,
+                user_table.c.id.label("author_id"),
+                user_table.c.username.label("author_username"),
+                user_table.c.image.label("author_image"),
+            )
+            .select_from(
+                post_table.join(user_table, post_table.c.user_id == user_table.c.id)
+            )
+            .where(post_table.c.id == post_id)
+        )
+    ).fetchone()
+    return {
+        "post_id": row.post_id,
+        "uid": row.uid,
+        "message": row.message,
+        "created": row.created.isoformat(),
+        "author_id": row.author_id,
+        "author_username": row.author_username,
+        "avatar_url": image_url(row.author_id, row.author_image, "sm"),
+        "permalink": url_for(
+            "post_app.detail", uid=row.uid, slug=slugify(row.message)
+        ),
+        "images": await _post_images(conn, post_id),
+        "reason_type": reason_type,
+        "reason_username": reason_username,
+    }
+
+
 async def _post_extras(conn: Any, post_id: int, user_id: int) -> Dict[str, Any]:
     """Comments + like info for a single post, from the ``user_id`` viewer's POV."""
     comment_rows = (

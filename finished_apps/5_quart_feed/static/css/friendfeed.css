@@ -39,6 +39,16 @@ body {
     border: 1px solid var(--ff-border);
     box-shadow: none;
 }
+
+/* Font hierarchy: the author + post text read larger than the meta/likes/
+   comments below them. */
+.entry-author {
+    font-size: 1.02rem;
+}
+.entry-text {
+    font-size: 1.08rem;
+    line-height: 1.35;
+}
 .card a.fw-bold {
     color: var(--ff-blue);
     text-decoration: none;

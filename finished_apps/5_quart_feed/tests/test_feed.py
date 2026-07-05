@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from quart import current_app
 from sqlalchemy import select
@@ -5,6 +7,7 @@ from sqlalchemy import select
 from post.models import feed_table, post_table
 from post.views import _load_feed
 from user.models import user_table
+from utils.sse import broker
 
 
 async def _register_and_login(client, username: str, password: str = "secret123") -> None:
@@ -121,3 +124,37 @@ async def test_bubble_dedups_against_direct_follow(create_test_app):
     rows = await _feed_rows(app, viewer_id)
     assert len(rows) == 1  # still one row, not duplicated
     assert rows[0].reason_user_id is None  # direct-follow row keeps its NULL reason
+
+
+@pytest.mark.asyncio
+async def test_comment_live_bubbles_post_over_sse(create_test_app):
+    """Commenting pushes the post live (SSE 'post' event) to the commenter's followers."""
+    app = create_test_app
+    author = app.test_client()
+    await _register_and_login(author, "author")
+    commenter = app.test_client()
+    await _register_and_login(commenter, "commenter")
+    viewer = app.test_client()
+    await _register_and_login(viewer, "viewer")
+
+    await viewer.post("/follow/commenter")  # follows the commenter, not the author
+
+    await author.post("/post", form={"message": "bubble me"})
+    post_id = await _only_post_id(app)
+    viewer_id = await _user_id(app, "viewer")
+
+    q = broker.subscribe(viewer_id)
+    try:
+        await commenter.post(f"/comment/{post_id}", form={"comment": "nice"})
+        events = []
+        while not q.empty():
+            events.append(q.get_nowait())
+    finally:
+        broker.unsubscribe(viewer_id, q)
+
+    post_events = [e for e in events if e.event == "post"]
+    assert post_events, "follower should receive a live 'post' event"
+    data = json.loads(post_events[0].data)
+    assert data["post_id"] == post_id
+    assert data["reason_type"] == "comment"
+    assert data["reason_username"] == "commenter"

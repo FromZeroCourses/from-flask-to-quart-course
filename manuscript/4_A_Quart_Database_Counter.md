@@ -912,4 +912,4 @@ As you can see from the output, the database was created and destroyed twice, on
 
 And with that we have a working database-powered Quart application with tests, all running in Docker. We can use this as a boilerplate for any project that uses Quart and Postgres.
 
-If you want to grab the updated boilerplate at any time, just visit [this Github repo](https://github.com/fromzeroedu/quart-postgres-boilerplate).
+If you want to grab the updated boilerplate at any time, just visit [this Github repo](https://fmze.co/fftq-counter-boilerplate).

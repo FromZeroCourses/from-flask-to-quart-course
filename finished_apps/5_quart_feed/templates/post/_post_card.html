@@ -1,7 +1,7 @@
 {% macro comment_row(c) %}
 <div class="comment small"><span class="comment-bubble">💬</span>
-    <strong><a href="{{ url_for('user_app.profile', username=c.author_username) }}">@{{ c.author_username }}</a>:</strong>
-    {{ c.comment | linkify }}</div>
+    {{ c.comment | linkify }}
+    - <a href="{{ url_for('user_app.profile', username=c.author_username) }}" class="comment-author">@{{ c.author_username }}</a></div>
 {% endmacro %}
 <div class="card mb-3" data-post-id="{{ post.post_id }}">
     <div class="card-body">
@@ -23,20 +23,20 @@
             {% endfor %}
         </div>
         {% endif %}
-        <a href="{{ post_url(post.uid, post.message) }}" class="text-muted text-decoration-underline">
-            <time class="timeago" datetime="{{ post.created.isoformat() }}" style="font-size: 0.7rem;">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
-        </a>
-
-        <div class="likes small text-muted mt-1">{{ likes_line(post.likers) }}</div>
-
-        <div class="mt-2">
+        <div class="ff-meta small text-muted mt-1">
+            <a href="{{ post_url(post.uid, post.message) }}" class="ff-meta-time">
+                <time class="timeago" datetime="{{ post.created.isoformat() }}">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
+            </a>
+            - <a href="#" class="ff-comment">Comment</a>
+            -
             <form method="POST" action="{{ url_for('like_app.toggle_like', post_id=post.post_id) }}" class="d-inline">
                 {{ form.csrf_token }}
-                <button type="submit" class="btn btn-sm {{ 'btn-primary' if post.liked_by_me else 'btn-outline-primary' }}">
-                    Like (<span class="like-count">{{ post.like_count }}</span>)
-                </button>
+                <button type="submit" class="ff-action-link">{{ 'Unlike' if post.liked_by_me else 'Like' }}</button>
             </form>
+            - <a href="#" class="ff-hide">Hide</a>
         </div>
+
+        <div class="likes small text-muted mt-1">{{ likes_line(post.likers) }}</div>
 
         <div class="comments mt-2">
             {% set cs = post.comments %}
@@ -51,7 +51,7 @@
             {% endif %}
         </div>
 
-        <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="mt-2 d-flex">
+        <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="comment-form mt-2 d-flex d-none">
             {{ form.csrf_token }}
             <input type="text" name="comment" class="form-control form-control-sm me-2" placeholder="Add a comment...">
             <button type="submit" class="btn btn-sm btn-outline-secondary">Send</button>

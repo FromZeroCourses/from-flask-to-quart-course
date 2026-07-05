@@ -41,24 +41,18 @@ document.addEventListener("DOMContentLoaded", () => {
               .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
               .join("")}</div>`
           : ""}
-        <a href="${post.permalink}" class="text-muted text-decoration-underline">
-          <time class="timeago" datetime="${post.created}" style="font-size: 0.7rem;">${new Date(post.created).toLocaleString()}</time>
-        </a>
+        <div class="ff-meta small text-muted mt-1">
+          <a href="${post.permalink}" class="ff-meta-time"><time class="timeago" datetime="${post.created}">${new Date(post.created).toLocaleString()}</time></a>
+          - <a href="#" class="ff-comment">Comment</a>
+          - <form method="POST" action="/like/${post.post_id}" class="d-inline"><input type="hidden" name="csrf_token" value="${csrfToken}"><button type="submit" class="ff-action-link">Like</button></form>
+          - <a href="#" class="ff-hide">Hide</a>
+        </div>
 
         <div class="likes small text-muted mt-1"></div>
 
-        <div class="mt-2">
-          <form method="POST" action="/like/${post.post_id}" class="d-inline">
-            <input type="hidden" name="csrf_token" value="${csrfToken}">
-            <button type="submit" class="btn btn-sm btn-outline-primary">
-              Like (<span class="like-count">0</span>)
-            </button>
-          </form>
-        </div>
-
         <div class="comments mt-2"></div>
 
-        <form method="POST" action="/comment/${post.post_id}" class="mt-2 d-flex">
+        <form method="POST" action="/comment/${post.post_id}" class="comment-form mt-2 d-flex d-none">
           <input type="hidden" name="csrf_token" value="${csrfToken}">
           <input type="text" name="comment" class="form-control form-control-sm me-2" placeholder="Add a comment...">
           <button type="submit" class="btn btn-sm btn-outline-secondary">Send</button>
@@ -77,7 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const commentsDiv = card.querySelector(".comments");
     const commentEl = document.createElement("div");
     commentEl.className = "comment small";
-    commentEl.innerHTML = `<span class="comment-bubble">💬</span> <strong><a href="/user/${encodeURIComponent(comment.author_username)}">@${escapeHtml(comment.author_username)}</a>:</strong> ${window.linkify ? window.linkify(comment.comment) : escapeHtml(comment.comment)}`;
+    commentEl.innerHTML = `<span class="comment-bubble">💬</span> ${window.linkify ? window.linkify(comment.comment) : escapeHtml(comment.comment)} - <a href="/user/${encodeURIComponent(comment.author_username)}" class="comment-author">@${escapeHtml(comment.author_username)}</a>`;
     commentsDiv.appendChild(commentEl);
   });
 
@@ -86,8 +80,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const card = feed.querySelector(`[data-post-id="${like.post_id}"]`);
     if (!card) return;
 
-    const countEl = card.querySelector(".like-count");
-    if (countEl) countEl.textContent = like.like_count;
     const likesDiv = card.querySelector(".likes");
     if (likesDiv && window.renderLikesLine)
       likesDiv.innerHTML = window.renderLikesLine(like.likers || []);

@@ -42,7 +42,11 @@
     head = head || 3;
     collapseOver = collapseOver || 5;
     if (!likers || !likers.length) return "";
-    var names = likers.map(esc);
+    var names = likers.map(function (name) {
+      return (
+        '<a href="/user/' + encodeURIComponent(name) + '">' + esc(name) + "</a>"
+      );
+    });
     var emoji = '<span class="likes-emoji">🙂</span> ';
     if (names.length <= collapseOver) {
       var body =
@@ -68,8 +72,31 @@
   window.linkify = linkify;
   window.renderLikesLine = renderLikesLine;
 
-  // Expanders: "N other people" (likes) and "N more comments" (comments).
   document.addEventListener("click", function (e) {
+    // "Comment" action -> reveal + focus the comment box.
+    var commentLink = e.target.closest(".ff-comment");
+    if (commentLink) {
+      e.preventDefault();
+      var ccard = commentLink.closest(".card");
+      var cform = ccard && ccard.querySelector(".comment-form");
+      if (cform) {
+        cform.classList.remove("d-none");
+        var input = cform.querySelector('input[name="comment"]');
+        if (input) input.focus();
+      }
+      return;
+    }
+
+    // "Hide" action -> hide the entry (client-side).
+    var hideLink = e.target.closest(".ff-hide");
+    if (hideLink) {
+      e.preventDefault();
+      var hcard = hideLink.closest(".card");
+      if (hcard) hcard.style.display = "none";
+      return;
+    }
+
+    // Expanders: "N other people" (likes) and "N more comments" (comments).
     var more = e.target.closest(".likers-more");
     if (more) {
       e.preventDefault();

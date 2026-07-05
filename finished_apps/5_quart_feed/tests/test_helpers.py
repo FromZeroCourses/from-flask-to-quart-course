@@ -6,18 +6,22 @@ def test_likes_line_empty():
 
 
 def test_likes_line_one():
-    assert "alice liked this" in str(likes_line(["alice"]))
+    s = str(likes_line(["alice"]))
+    assert '<a href="/user/alice">alice</a> liked this' in s
 
 
 def test_likes_line_few():
-    assert "a, b and c liked this" in str(likes_line(["a", "b", "c"]))
+    s = str(likes_line(["a", "b", "c"]))
+    assert " and " in s and "liked this" in s
+    for u in ("a", "b", "c"):
+        assert '/user/%s' % u in s  # each name is a profile link
 
 
 def test_likes_line_collapses_over_five():
     s = str(likes_line(["u1", "u2", "u3", "u4", "u5", "u6", "u7"]))  # 7 > 5
-    assert "u1, u2, u3 and " in s
     assert "4 other people" in s  # 7 - 3 shown
     assert "likers-more" in s and "likers-full" in s
+    assert "/user/u1" in s and "/user/u7" in s  # first shown + present in full list
 
 
 def test_linkify_escapes_and_links():

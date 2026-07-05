@@ -3,6 +3,7 @@ import secrets
 import string
 from functools import wraps
 from typing import Any, Callable, List, Optional
+from urllib.parse import quote
 
 from markupsafe import Markup, escape
 from quart import current_app, redirect, request, session, url_for
@@ -81,13 +82,18 @@ def post_image_url(post_id: int, image_id: int) -> str:
     return f"{current_app.config['IMAGE_URL']}/posts/{post_id}.{image_id}.xlg.png"
 
 
+def _profile_link(name: str) -> str:
+    """A profile link for a username: <a href="/user/name">name</a>."""
+    return f'<a href="/user/{quote(str(name), safe="")}">{escape(name)}</a>'
+
+
 def likes_line(likers: List[str], head: int = 3, collapse_over: int = 5) -> Markup:
-    """FriendFeed-style "A, B and C liked this" line.
+    """FriendFeed-style "A, B and C liked this" line, names linked to profiles.
 
     Up to ``collapse_over`` names are listed in full; beyond that the first
     ``head`` are shown followed by an expandable "N other people" link.
     """
-    names = [str(escape(name)) for name in likers]
+    names = [_profile_link(name) for name in likers]
     n = len(names)
     if n == 0:
         return Markup("")

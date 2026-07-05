@@ -18,7 +18,11 @@
                 <img src="{{ avatar_url }}" class="rounded-circle me-3" width="64" height="64" alt="avatar">
                 <div>
                     <h3 class="mb-0">@{{ profile_user.username }}</h3>
-                    <small class="text-muted">{{ follower_count }} followers &middot; {{ following_count }} following</small>
+                    <small class="text-muted">
+                        <a href="{{ url_for('user_app.followers', username=profile_user.username) }}" class="text-muted text-decoration-none">{{ follower_count }} followers</a>
+                        &middot;
+                        <a href="{{ url_for('user_app.following', username=profile_user.username) }}" class="text-muted text-decoration-none">{{ following_count }} following</a>
+                    </small>
                 </div>
             </div>
 

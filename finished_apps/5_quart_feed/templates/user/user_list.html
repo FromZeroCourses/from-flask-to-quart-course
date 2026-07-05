@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - @{{ profile_user.username }}{% endblock %}
+
+{% block content %}
+
+{% include "navbar.html" %}
+
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+
+        <h3 class="mb-3">{{ title }} for @{{ profile_user.username }}</h3>
+
+        {% if users %}
+        <div class="row row-cols-2 row-cols-md-4 g-3">
+            {% for u in users %}
+            <div class="col">
+                <div class="card text-center p-2">
+                    <a href="{{ url_for('user_app.profile', username=u.username) }}" class="text-decoration-none text-body">
+                        <img src="{{ u.avatar_url }}" class="rounded-circle mb-2" width="80" height="80" alt="avatar">
+                        <div>@{{ u.username }}</div>
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">{{ empty_message }}</p>
+        {% endif %}
+
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Profile{% endblock %}
+
+{% block content %}
+
+{% include "navbar.html" %}
+
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+
+        <h3>Edit Profile</h3>
+
+        {% from "_formhelpers.html" import render_field %}
+
+        <form method="POST" action="{{ url_for('.profile_edit') }}" enctype="multipart/form-data" role="form">
+            {{ render_field(form.image) }}
+            {{ form.csrf_token }}
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+
+    </div>
+</div>
+
+{% endblock %}

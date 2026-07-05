@@ -1,0 +1,11 @@
+QUART_APP='manage.py'
+QUART_ENV=development
+SECRET_KEY='my_secret_key'
+DB_USERNAME=app_user
+DB_PASSWORD=app_password
+DB_HOST=db
+DATABASE_NAME=app
+UPLOADS_FOLDER=static/uploads
+IMAGES_FOLDER=static/uploads
+IMAGE_URL=/static/uploads
+WTF_CSRF_ENABLED=1

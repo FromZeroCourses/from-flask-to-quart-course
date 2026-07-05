@@ -1,0 +1,30 @@
+<nav class="navbar navbar-expand-lg navbar-light bg-light mb-3">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="{{ url_for('post_app.home') }}">QuartFeed</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <div class="navbar-nav ms-auto">
+                {% if session.username %}
+                <li class="nav-item dropdown list-unstyled">
+                    <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        @{{ session.username }}
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                        <li><a class="dropdown-item" href="{{ url_for('user_app.profile', username=session.username) }}">Profile</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('user_app.profile_edit') }}">Edit profile</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{{ url_for('user_app.logout') }}">Logout</a></li>
+                    </ul>
+                </li>
+                {% else %}
+                <a class="nav-link" href="{{ url_for('user_app.login') }}">Login</a>
+                <a class="nav-link" href="{{ url_for('user_app.register') }}">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</nav>

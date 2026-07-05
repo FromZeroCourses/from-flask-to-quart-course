@@ -1,0 +1,52 @@
+import json
+
+from quart import Blueprint, current_app, redirect, session, url_for
+from sqlalchemy import insert, select
+
+from comment.forms import CommentForm
+from comment.models import comment_table
+from helpers import login_required
+from sse import ServerSentEvent, broker
+from user.models import user_table
+
+comment_app = Blueprint("comment_app", __name__)
+
+
+@comment_app.route("/comment/<int:post_id>", methods=["POST"])
+@login_required
+async def create_comment(post_id: int):
+    form = await CommentForm.create_form()
+
+    if await form.validate_on_submit():
+        engine = current_app.dbc  # type: ignore
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                insert(comment_table).values(
+                    post_id=post_id,
+                    user_id=session["user_id"],
+                    comment=form.comment.data,
+                )
+            )
+            comment_id = result.inserted_primary_key[0]
+
+            comment_row = (
+                await conn.execute(
+                    select(comment_table).where(comment_table.c.id == comment_id)
+                )
+            ).fetchone()
+            author = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.id == session["user_id"])
+                )
+            ).fetchone()
+
+        payload = {
+            "post_id": post_id,
+            "comment_id": comment_id,
+            "comment": comment_row.comment,
+            "created": comment_row.created.isoformat(),
+            "author_username": author.username,
+        }
+        await broker.publish(ServerSentEvent(event="comment", data=json.dumps(payload)))
+
+    return redirect(url_for("post_app.home"))

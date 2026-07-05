@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+
+{% include "navbar.html" %}
+
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+
+        {% for message in get_flashed_messages() %}
+        <div class="alert alert-success">{{ message }}</div>
+        {% endfor %}
+
+        <h3>Login</h3>
+
+        {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+        {% endif %}
+
+        {% from "_formhelpers.html" import render_field %}
+
+        <form method="POST" action="{{ url_for('.login') }}" role="form">
+            {{ render_field(form.username) }}
+            {{ render_field(form.password) }}
+            {{ form.csrf_token }}
+            <button type="submit" class="btn btn-primary">Login</button>
+        </form>
+
+    </div>
+</div>
+
+{% endblock %}

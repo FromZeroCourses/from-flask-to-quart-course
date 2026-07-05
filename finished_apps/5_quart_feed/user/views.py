@@ -1,4 +1,3 @@
-import time
 from pathlib import Path
 from typing import Optional, Union
 
@@ -16,9 +15,9 @@ from quart import (
     url_for,
 )
 from sqlalchemy import insert, select, update
-from wand.image import Image
 
 from utils.helpers import get_user_by_id, get_user_by_username, image_url, login_required
+from utils.imaging import AVATAR_SIZES, thumbnail_process
 from post.models import post_table
 from relationship.models import relationship_table
 from relationship.views import EmptyForm, followers, is_following
@@ -200,25 +199,17 @@ async def following_list(username: str) -> str:
     )
 
 
+def _avatars_dir() -> Path:
+    return Path(current_app.config["UPLOADS_FOLDER"]) / "avatars"
+
+
 def _save_avatar(file_storage, user_id: int) -> int:
-    """Resize the uploaded avatar with Wand/ImageMagick and save it to disk.
+    """Center-crop the uploaded avatar into sm/lg/xlg PNGs.
 
-    Returns the unix timestamp used in the saved filename (also stored on
-    ``user.image``).
+    Returns the image_id (a unix timestamp, stored on ``user.image``).
     """
-    ts = int(time.time())
-    uploads_folder = Path(current_app.config["UPLOADS_FOLDER"])
-    uploads_folder.mkdir(parents=True, exist_ok=True)
-    dest = uploads_folder / f"{user_id}_{ts}.png"
-
     data = file_storage.read()
-    with Image(blob=data) as img:
-        img.transform(resize="200x200^")
-        img.crop(width=200, height=200, gravity="center")
-        img.format = "png"
-        img.save(filename=str(dest))
-
-    return ts
+    return thumbnail_process(data, _avatars_dir(), user_id)
 
 
 @user_app.route("/profile/delete-image", methods=["POST"])
@@ -233,17 +224,18 @@ async def delete_image() -> Union[Response, tuple]:
             current_user = await get_user_by_id(conn, session["user_id"])
 
             if current_user is not None and current_user.image is not None:
-                avatar_path = (
-                    Path(current_app.config["UPLOADS_FOLDER"])
-                    / f"{session['user_id']}_{current_user.image}.png"
-                )
-                try:
-                    if avatar_path.exists():
-                        avatar_path.unlink()
-                except OSError:
-                    # Best-effort: a missing/locked file must not block the
-                    # database reset below.
-                    pass
+                for size, _ in AVATAR_SIZES:
+                    avatar_path = (
+                        _avatars_dir()
+                        / f"{session['user_id']}.{current_user.image}.{size}.png"
+                    )
+                    try:
+                        if avatar_path.exists():
+                            avatar_path.unlink()
+                    except OSError:
+                        # Best-effort: a missing/locked file must not block the
+                        # database reset below.
+                        pass
 
                 await conn.execute(
                     update(user_table)
@@ -306,7 +298,7 @@ async def profile_edit() -> Union[str, Response]:
     return await render_template(
         "user/profile_edit.html",
         form=form,
-        avatar_url=image_url(current_user.id, current_user.image),
+        avatar_url=image_url(current_user.id, current_user.image, "xlg"),
         has_custom_image=current_user.image is not None,
         delete_form=await EmptyForm.create_form(),
         error=error,

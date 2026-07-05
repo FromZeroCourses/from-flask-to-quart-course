@@ -59,13 +59,15 @@ async def get_user_by_id(conn: Any, user_id: int) -> Optional[Row]:
     return result.fetchone()
 
 
-def image_url(user_id: int, image: Optional[int]) -> str:
-    """Build the avatar URL for a user.
+def image_url(user_id: int, image: Optional[int], size: str = "lg") -> str:
+    """Build the avatar URL for a user, at the requested size (sm/lg/xlg).
 
     ``user_id``/``image`` are passed separately (rather than a full user row)
     so this works both for a full ``user`` row and for a joined feed row that
-    only carries ``author_id``/``author_image`` columns.
+    only carries ``author_id``/``author_image`` columns. ``image`` is the
+    avatar's image_id (a timestamp); files are named by ``thumbnail_process``
+    as ``avatars/{user_id}.{image_id}.{size}.png``.
     """
     if image:
-        return f"{current_app.config['IMAGE_URL']}/{user_id}_{image}.png"
+        return f"{current_app.config['IMAGE_URL']}/avatars/{user_id}.{image}.{size}.png"
     return "/static/default_profile.png"

@@ -120,7 +120,7 @@ async def _load_feed(
                 "created": row.created,
                 "author_id": row.author_id,
                 "author_username": row.author_username,
-                "avatar_url": image_url(row.author_id, row.author_image),
+                "avatar_url": image_url(row.author_id, row.author_image, "sm"),
                 # Why this post is in the feed (None for a direct follow).
                 "reason_type": row.reason_type,
                 "reason_username": row.reason_username,
@@ -269,7 +269,7 @@ async def create_post():
             "created": post_row.created.isoformat(),
             "author_id": author.id,
             "author_username": author.username,
-            "avatar_url": image_url(author.id, author.image),
+            "avatar_url": image_url(author.id, author.image, "sm"),
             "permalink": url_for(
                 "post_app.detail", uid=post_row.uid, slug=slugify(post_row.message)
             ),

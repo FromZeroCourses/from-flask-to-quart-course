@@ -15,11 +15,15 @@
 
         <div class="card mb-4">
             <div class="card-body">
-                <form method="POST" action="{{ url_for('post_app.create_post') }}" id="post-form">
+                <form method="POST" action="{{ url_for('post_app.create_post') }}" id="post-form"
+                    enctype="multipart/form-data">
                     <textarea name="message" class="form-control mb-2" rows="2"
                         placeholder="What's on your mind?">{{ form.message.data or '' }}</textarea>
-                    {{ form.csrf_token }}
-                    <button type="submit" class="btn btn-primary">Post</button>
+                    <div class="d-flex align-items-center">
+                        {{ form.image(class="form-control form-control-sm me-2", accept="image/*") }}
+                        {{ form.csrf_token }}
+                        <button type="submit" class="btn btn-primary">Post</button>
+                    </div>
                 </form>
             </div>
         </div>

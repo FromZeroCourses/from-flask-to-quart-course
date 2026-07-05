@@ -71,3 +71,8 @@ def image_url(user_id: int, image: Optional[int], size: str = "lg") -> str:
     if image:
         return f"{current_app.config['IMAGE_URL']}/avatars/{user_id}.{image}.{size}.png"
     return "/static/default_profile.png"
+
+
+def post_image_url(post_id: int, image_id: int) -> str:
+    """URL for a post image (fixed-height variant), written by image_height_transform."""
+    return f"{current_app.config['IMAGE_URL']}/posts/{post_id}.{image_id}.xlg.png"

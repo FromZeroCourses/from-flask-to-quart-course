@@ -7,6 +7,14 @@
             </a>
         </div>
         <p class="mb-1">{{ post.message }}</p>
+        {% if post.images %}
+        <div class="d-flex gap-2 mb-2" style="overflow-x: auto;">
+            {% for img in post.images %}
+            <img src="{{ img.url }}" alt="post image"
+                style="height: 200px; width: auto; border-radius: 6px;">
+            {% endfor %}
+        </div>
+        {% endif %}
         <a href="{{ post_url(post.uid, post.message) }}" class="text-muted text-decoration-underline">
             <time class="timeago" datetime="{{ post.created.isoformat() }}" style="font-size: 0.7rem;">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
         </a>

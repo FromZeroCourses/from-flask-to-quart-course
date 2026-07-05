@@ -36,6 +36,11 @@ document.addEventListener("DOMContentLoaded", () => {
           <a href="/user/${encodeURIComponent(post.author_username)}">@${escapeHtml(post.author_username)}</a>
         </div>
         <p class="mb-1">${escapeHtml(post.message)}</p>
+        ${(post.images && post.images.length)
+          ? `<div class="d-flex gap-2 mb-2" style="overflow-x: auto;">${post.images
+              .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
+              .join("")}</div>`
+          : ""}
         <a href="${post.permalink}" class="text-muted text-decoration-underline">
           <time class="timeago" datetime="${post.created}" style="font-size: 0.7rem;">${new Date(post.created).toLocaleString()}</time>
         </a>

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from quart import (
@@ -17,15 +18,41 @@ from sqlalchemy import func, insert, select
 
 from comment.models import comment_table
 from utils.feed_ops import fan_out_post
-from utils.helpers import generate_uid, image_url, login_required, slugify
+from utils.helpers import (
+    generate_uid,
+    image_url,
+    login_required,
+    post_image_url,
+    slugify,
+)
+from utils.imaging import image_height_transform
 from like.models import like_table
 from post.forms import PostForm
-from post.models import feed_table, post_table
+from post.models import feed_table, post_image_table, post_table
 from relationship.views import followers
 from utils.sse import ServerSentEvent, broker
 from user.models import user_table
 
 post_app = Blueprint("post_app", __name__)
+
+
+def _posts_dir() -> Path:
+    return Path(current_app.config["UPLOADS_FOLDER"]) / "posts"
+
+
+async def _post_images(conn: Any, post_id: int) -> List[Dict[str, Any]]:
+    """Images attached to a post, ordered for side-by-side display."""
+    rows = (
+        await conn.execute(
+            select(post_image_table.c.image_id, post_image_table.c.width)
+            .where(post_image_table.c.post_id == post_id)
+            .order_by(post_image_table.c.position.asc())
+        )
+    ).fetchall()
+    return [
+        {"url": post_image_url(post_id, row.image_id), "width": row.width}
+        for row in rows
+    ]
 
 
 async def _post_extras(conn: Any, post_id: int, user_id: int) -> Dict[str, Any]:
@@ -70,6 +97,7 @@ async def _post_extras(conn: Any, post_id: int, user_id: int) -> Dict[str, Any]:
 
     return {
         "comments": comment_rows,
+        "images": await _post_images(conn, post_id),
         "likers": likers,
         "like_count": len(likers),
         "liked_by_me": liked_by_me,
@@ -253,6 +281,22 @@ async def create_post():
             recipient_ids.add(session["user_id"])
             await fan_out_post(conn, post_id, recipient_ids)
 
+            # Optional single image: scale to a fixed height (side-by-side ready)
+            # and record it. One per post in the UI; the table supports more.
+            images: List[Dict[str, Any]] = []
+            if form.image.data:
+                image_id, width = image_height_transform(
+                    form.image.data.read(), _posts_dir(), post_id
+                )
+                await conn.execute(
+                    insert(post_image_table).values(
+                        post_id=post_id, image_id=image_id, width=width, position=0
+                    )
+                )
+                images.append(
+                    {"url": post_image_url(post_id, image_id), "width": width}
+                )
+
             author = (
                 await conn.execute(
                     select(user_table).where(user_table.c.id == session["user_id"])
@@ -273,6 +317,7 @@ async def create_post():
             "permalink": url_for(
                 "post_app.detail", uid=post_row.uid, slug=slugify(post_row.message)
             ),
+            "images": images,
         }
         # Push live ONLY to the same recipients that got a feed row (the
         # author's followers + the author). A global broadcast would leak the

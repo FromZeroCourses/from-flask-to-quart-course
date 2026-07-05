@@ -3,7 +3,7 @@ import random
 from quart import Quart, url_for
 
 from db import get_engine
-from utils.helpers import slugify
+from utils.helpers import likes_line, linkify, slugify
 
 
 def create_app(**config_overrides):
@@ -37,6 +37,9 @@ def create_app(**config_overrides):
     def post_url(uid: str, message: str) -> str:
         """Canonical SEO permalink for a post: /post/<uid>/<slug>."""
         return url_for("post_app.detail", uid=uid, slug=slugify(message))
+
+    app.add_template_global(likes_line, "likes_line")
+    app.add_template_filter(linkify, "linkify")
 
     @app.before_serving
     async def create_db_conn():

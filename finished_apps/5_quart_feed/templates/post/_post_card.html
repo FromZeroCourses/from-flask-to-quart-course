@@ -1,12 +1,20 @@
+{% macro comment_row(c) %}
+<div class="comment small"><span class="comment-bubble">💬</span>
+    <strong><a href="{{ url_for('user_app.profile', username=c.author_username) }}">@{{ c.author_username }}</a>:</strong>
+    {{ c.comment | linkify }}</div>
+{% endmacro %}
 <div class="card mb-3" data-post-id="{{ post.post_id }}">
     <div class="card-body">
         <div class="d-flex align-items-center mb-2">
             <img src="{{ post.avatar_url }}" class="rounded-circle me-2" width="40" height="40" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
-            <a href="{{ url_for('user_app.profile', username=post.author_username) }}">
+            <a href="{{ url_for('user_app.profile', username=post.author_username) }}" class="fw-bold">
                 @{{ post.author_username }}
             </a>
+            {% if post.reason_type == 'comment' and post.reason_username %}
+            <span class="text-muted small ms-1">(<a href="{{ url_for('user_app.profile', username=post.reason_username) }}">{{ post.reason_username }}</a> commented on this)</span>
+            {% endif %}
         </div>
-        <p class="mb-1">{{ post.message }}</p>
+        <p class="mb-1">{{ post.message | linkify }}</p>
         {% if post.images %}
         <div class="d-flex gap-2 mb-2" style="overflow-x: auto;">
             {% for img in post.images %}
@@ -19,6 +27,8 @@
             <time class="timeago" datetime="{{ post.created.isoformat() }}" style="font-size: 0.7rem;">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
         </a>
 
+        <div class="likes small text-muted mt-1">{{ likes_line(post.likers) }}</div>
+
         <div class="mt-2">
             <form method="POST" action="{{ url_for('like_app.toggle_like', post_id=post.post_id) }}" class="d-inline">
                 {{ form.csrf_token }}
@@ -29,9 +39,16 @@
         </div>
 
         <div class="comments mt-2">
-            {% for comment in post.comments %}
-            <div><small><strong><a href="{{ url_for('user_app.profile', username=comment.author_username) }}">@{{ comment.author_username }}</a>:</strong> {{ comment.comment }}</small></div>
-            {% endfor %}
+            {% set cs = post.comments %}
+            {% set n = cs | length %}
+            {% if n > 5 %}
+                {% for c in cs[:2] %}{{ comment_row(c) }}{% endfor %}
+                <div class="comments-hidden d-none">{% for c in cs[2:-2] %}{{ comment_row(c) }}{% endfor %}</div>
+                <div class="comments-more-wrap"><a href="#" class="comments-more small">{{ n - 4 }} more comments</a></div>
+                {% for c in cs[-2:] %}{{ comment_row(c) }}{% endfor %}
+            {% else %}
+                {% for c in cs %}{{ comment_row(c) }}{% endfor %}
+            {% endif %}
         </div>
 
         <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="mt-2 d-flex">

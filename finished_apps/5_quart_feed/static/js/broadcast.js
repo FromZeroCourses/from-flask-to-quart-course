@@ -35,7 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <img src="${post.avatar_url}" class="rounded-circle me-2" width="40" height="40" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
           <a href="/user/${encodeURIComponent(post.author_username)}">@${escapeHtml(post.author_username)}</a>
         </div>
-        <p class="mb-1">${escapeHtml(post.message)}</p>
+        <p class="mb-1">${window.linkify ? window.linkify(post.message) : escapeHtml(post.message)}</p>
         ${(post.images && post.images.length)
           ? `<div class="d-flex gap-2 mb-2" style="overflow-x: auto;">${post.images
               .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
@@ -44,6 +44,8 @@ document.addEventListener("DOMContentLoaded", () => {
         <a href="${post.permalink}" class="text-muted text-decoration-underline">
           <time class="timeago" datetime="${post.created}" style="font-size: 0.7rem;">${new Date(post.created).toLocaleString()}</time>
         </a>
+
+        <div class="likes small text-muted mt-1"></div>
 
         <div class="mt-2">
           <form method="POST" action="/like/${post.post_id}" class="d-inline">
@@ -74,7 +76,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const commentsDiv = card.querySelector(".comments");
     const commentEl = document.createElement("div");
-    commentEl.innerHTML = `<small><strong><a href="/user/${encodeURIComponent(comment.author_username)}">@${escapeHtml(comment.author_username)}</a>:</strong> ${escapeHtml(comment.comment)}</small>`;
+    commentEl.className = "comment small";
+    commentEl.innerHTML = `<span class="comment-bubble">💬</span> <strong><a href="/user/${encodeURIComponent(comment.author_username)}">@${escapeHtml(comment.author_username)}</a>:</strong> ${window.linkify ? window.linkify(comment.comment) : escapeHtml(comment.comment)}`;
     commentsDiv.appendChild(commentEl);
   });
 
@@ -85,5 +88,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const countEl = card.querySelector(".like-count");
     if (countEl) countEl.textContent = like.like_count;
+    const likesDiv = card.querySelector(".likes");
+    if (likesDiv && window.renderLikesLine)
+      likesDiv.innerHTML = window.renderLikesLine(like.likers || []);
   });
 });

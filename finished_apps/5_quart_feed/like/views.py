@@ -7,6 +7,7 @@ from sqlalchemy import delete, func, insert, select
 from utils.helpers import login_required
 from like.models import like_table
 from post.models import feed_table
+from user.models import user_table
 from utils.sse import ServerSentEvent, broker
 
 like_app = Blueprint("like_app", __name__)
@@ -48,6 +49,24 @@ async def toggle_like(post_id: int):
                 )
             ).scalar_one()
 
+            # Names of everyone who likes the post now, so the "A, B and N
+            # other people liked this" line can re-render live.
+            likers = [
+                r.username
+                for r in (
+                    await conn.execute(
+                        select(user_table.c.username)
+                        .select_from(
+                            like_table.join(
+                                user_table, like_table.c.user_id == user_table.c.id
+                            )
+                        )
+                        .where(like_table.c.post_id == post_id)
+                        .order_by(like_table.c.id.asc())
+                    )
+                ).fetchall()
+            ]
+
             # Deliver the updated count only to pages that have this post
             # (i.e. the users whose feed contains it), not every open page.
             recipient_ids = [
@@ -65,7 +84,9 @@ async def toggle_like(post_id: int):
             recipient_ids,
             ServerSentEvent(
                 event="like",
-                data=json.dumps({"post_id": post_id, "like_count": like_count}),
+                data=json.dumps(
+                    {"post_id": post_id, "like_count": like_count, "likers": likers}
+                ),
             ),
         )
 

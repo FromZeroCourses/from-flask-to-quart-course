@@ -36,7 +36,9 @@ document.addEventListener("DOMContentLoaded", () => {
           <a href="/user/${encodeURIComponent(post.author_username)}">@${escapeHtml(post.author_username)}</a>
         </div>
         <p class="mb-1">${escapeHtml(post.message)}</p>
-        <small class="text-muted">${new Date(post.created).toLocaleString()}</small>
+        <a href="/post/${post.post_id}" class="text-muted text-decoration-none">
+          <time class="timeago" datetime="${post.created}">${new Date(post.created).toLocaleString()}</time>
+        </a>
 
         <div class="mt-2">
           <form method="POST" action="/like/${post.post_id}" class="d-inline">
@@ -57,6 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
     `;
     feed.prepend(card);
+    if (window.formatTimeago) window.formatTimeago(card);
   });
 
   es.addEventListener("comment", (e) => {

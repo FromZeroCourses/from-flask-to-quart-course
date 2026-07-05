@@ -1,0 +1,35 @@
+<div class="card mb-3" data-post-id="{{ post.post_id }}">
+    <div class="card-body">
+        <div class="d-flex align-items-center mb-2">
+            <img src="{{ post.avatar_url }}" class="rounded-circle me-2" width="40" height="40" alt="avatar">
+            <a href="{{ url_for('user_app.profile', username=post.author_username) }}">
+                @{{ post.author_username }}
+            </a>
+        </div>
+        <p class="mb-1">{{ post.message }}</p>
+        <a href="{{ url_for('post_app.detail', post_id=post.post_id) }}" class="text-muted text-decoration-none">
+            <time class="timeago" datetime="{{ post.created.isoformat() }}">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
+        </a>
+
+        <div class="mt-2">
+            <form method="POST" action="{{ url_for('like_app.toggle_like', post_id=post.post_id) }}" class="d-inline">
+                {{ form.csrf_token }}
+                <button type="submit" class="btn btn-sm {{ 'btn-primary' if post.liked_by_me else 'btn-outline-primary' }}">
+                    Like (<span class="like-count">{{ post.like_count }}</span>)
+                </button>
+            </form>
+        </div>
+
+        <div class="comments mt-2">
+            {% for comment in post.comments %}
+            <div><small><strong>@{{ comment.author_username }}:</strong> {{ comment.comment }}</small></div>
+            {% endfor %}
+        </div>
+
+        <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="mt-2 d-flex">
+            {{ form.csrf_token }}
+            <input type="text" name="comment" class="form-control form-control-sm me-2" placeholder="Add a comment...">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">Send</button>
+        </form>
+    </div>
+</div>

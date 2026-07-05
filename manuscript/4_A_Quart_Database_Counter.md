@@ -828,7 +828,7 @@ tests/test_counter.py .                                                  [100%]
 
 ## Completing our tests <!-- 4.8 -->
 
-We now get a green line and the "passed" label. If you look closer, you'll notice that the print statements we added in our fixtures aren’t being shown. For those to be printed, you need to add a `-s` flag to the command, like so:
+We now get a green line and the "passed" label. The print statements we added in our fixtures aren’t being shown. For those to be printed, you need to add a `-s` flag to the command, like so:
 
 {lang=bash,line-numbers=off}
 ```

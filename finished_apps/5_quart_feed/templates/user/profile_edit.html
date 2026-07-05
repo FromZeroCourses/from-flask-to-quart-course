@@ -14,7 +14,36 @@
         {% from "_formhelpers.html" import render_field %}
 
         <form method="POST" action="{{ url_for('.profile_edit') }}" enctype="multipart/form-data" role="form">
-            {{ render_field(form.image) }}
+
+            <div class="text-center mb-3">
+                <label for="image" style="cursor: pointer;">
+                    <img id="avatar-preview" src="{{ avatar_url }}" class="rounded-circle" width="120" height="120" alt="avatar"><br>
+                    <span class="link-primary text-decoration-underline" style="cursor: pointer;">Upload image</span>
+                </label>
+                {{ form.image(class="d-none") }}
+                {% if form.image.errors %}
+                <ul class="text-danger">
+                    {% for image_error in form.image.errors %}
+                    <li>{{ image_error }}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+                {% if has_custom_image %}
+                <div>
+                    <form method="POST" action="{{ url_for('.delete_image') }}">
+                        {{ delete_form.csrf_token }}
+                        <button type="submit" class="btn btn-link link-primary text-decoration-underline p-0" style="cursor: pointer;">Delete image</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+
+            {{ render_field(form.username) }}
+
+            {% if error %}
+            <div class="text-danger mb-3">{{ error }}</div>
+            {% endif %}
+
             {{ form.csrf_token }}
             <button type="submit" class="btn btn-primary">Save</button>
         </form>
@@ -22,4 +51,14 @@
     </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('image').addEventListener('change', function () {
+        if (this.files[0]) {
+            document.getElementById('avatar-preview').src = URL.createObjectURL(this.files[0]);
+        }
+    });
+</script>
 {% endblock %}

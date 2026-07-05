@@ -15,6 +15,7 @@ class UserForm(QuartForm):
 
 
 class ProfileEditForm(QuartForm):
+    username = StringField("Username", validators=[DataRequired(), Length(max=15)])
     image = FileField(
         "Profile image",
         validators=[FileAllowed(["png", "jpg", "jpeg"], "Images only!")],

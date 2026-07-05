@@ -11,13 +11,14 @@ from quart import (
     flash,
     redirect,
     render_template,
+    request,
     session,
     url_for,
 )
 from sqlalchemy import insert, select, update
 from wand.image import Image
 
-from helpers import get_user_by_username, image_url, login_required
+from helpers import get_user_by_id, get_user_by_username, image_url, login_required
 from post.models import post_table
 from relationship.models import relationship_table
 from relationship.views import EmptyForm, followers, is_following
@@ -129,6 +130,76 @@ async def profile(username: str) -> str:
     )
 
 
+@user_app.route("/user/<username>/followers", endpoint="followers")
+async def followers_list(username: str) -> str:
+    engine = current_app.dbc  # type: ignore
+    async with engine.begin() as conn:
+        profile_user = await get_user_by_username(conn, username)
+        if profile_user is None:
+            abort(404)
+
+        result = await conn.execute(
+            select(user_table)
+            .select_from(
+                user_table.join(
+                    relationship_table,
+                    relationship_table.c.fm_user_id == user_table.c.id,
+                )
+            )
+            .where(relationship_table.c.to_user_id == profile_user.id)
+            .order_by(user_table.c.username)
+        )
+        rows = result.fetchall()
+
+    users = [
+        {"id": row.id, "username": row.username, "avatar_url": image_url(row.id, row.image)}
+        for row in rows
+    ]
+
+    return await render_template(
+        "user/user_list.html",
+        title="Followers",
+        profile_user=profile_user,
+        users=users,
+        empty_message="No followers yet.",
+    )
+
+
+@user_app.route("/user/<username>/following", endpoint="following")
+async def following_list(username: str) -> str:
+    engine = current_app.dbc  # type: ignore
+    async with engine.begin() as conn:
+        profile_user = await get_user_by_username(conn, username)
+        if profile_user is None:
+            abort(404)
+
+        result = await conn.execute(
+            select(user_table)
+            .select_from(
+                user_table.join(
+                    relationship_table,
+                    relationship_table.c.to_user_id == user_table.c.id,
+                )
+            )
+            .where(relationship_table.c.fm_user_id == profile_user.id)
+            .order_by(user_table.c.username)
+        )
+        rows = result.fetchall()
+
+    users = [
+        {"id": row.id, "username": row.username, "avatar_url": image_url(row.id, row.image)}
+        for row in rows
+    ]
+
+    return await render_template(
+        "user/user_list.html",
+        title="Following",
+        profile_user=profile_user,
+        users=users,
+        empty_message="Not following anyone yet.",
+    )
+
+
 def _save_avatar(file_storage, user_id: int) -> int:
     """Resize the uploaded avatar with Wand/ImageMagick and save it to disk.
 
@@ -150,23 +221,85 @@ def _save_avatar(file_storage, user_id: int) -> int:
     return ts
 
 
+@user_app.route("/profile/delete-image", methods=["POST"])
+@login_required
+async def delete_image() -> Response:
+    form = await EmptyForm.create_form()
+    engine = current_app.dbc  # type: ignore
+
+    if await form.validate_on_submit():
+        async with engine.begin() as conn:
+            current_user = await get_user_by_id(conn, session["user_id"])
+
+            if current_user is not None and current_user.image is not None:
+                avatar_path = (
+                    Path(current_app.config["UPLOADS_FOLDER"])
+                    / f"{session['user_id']}_{current_user.image}.png"
+                )
+                try:
+                    if avatar_path.exists():
+                        avatar_path.unlink()
+                except OSError:
+                    # Best-effort: a missing/locked file must not block the
+                    # database reset below.
+                    pass
+
+                await conn.execute(
+                    update(user_table)
+                    .where(user_table.c.id == session["user_id"])
+                    .values(image=None)
+                )
+
+        await flash("Profile image removed")
+
+    return redirect(url_for(".profile_edit"))
+
+
 @user_app.route("/profile/edit", methods=["GET", "POST"])
 @login_required
 async def profile_edit() -> Union[str, Response]:
     form = await ProfileEditForm.create_form()
+    error: Optional[str] = None
+    engine = current_app.dbc  # type: ignore
+
+    async with engine.begin() as conn:
+        current_user = await get_user_by_id(conn, session["user_id"])
+
+    if request.method == "GET":
+        form.username.data = current_user.username
 
     if await form.validate_on_submit():
+        new_username = form.username.data
+        ts: Optional[int] = None
         if form.image.data:
             ts = _save_avatar(form.image.data, session["user_id"])
-            engine = current_app.dbc  # type: ignore
-            async with engine.begin() as conn:
+
+        async with engine.begin() as conn:
+            if new_username != current_user.username:
+                existing = await get_user_by_username(conn, new_username)
+                if existing is not None and existing.id != session["user_id"]:
+                    error = "Username already exists"
+
+            if not error:
+                values = {"username": new_username}
+                if ts is not None:
+                    values["image"] = ts
                 await conn.execute(
                     update(user_table)
                     .where(user_table.c.id == session["user_id"])
-                    .values(image=ts)
+                    .values(**values)
                 )
 
-        await flash("Profile updated")
-        return redirect(url_for(".profile", username=session["username"]))
+        if not error:
+            session["username"] = new_username
+            await flash("Profile updated")
+            return redirect(url_for(".profile", username=new_username))
 
-    return await render_template("user/profile_edit.html", form=form)
+    return await render_template(
+        "user/profile_edit.html",
+        form=form,
+        avatar_url=image_url(current_user.id, current_user.image),
+        has_custom_image=current_user.image is not None,
+        delete_form=await EmptyForm.create_form(),
+        error=error,
+    )

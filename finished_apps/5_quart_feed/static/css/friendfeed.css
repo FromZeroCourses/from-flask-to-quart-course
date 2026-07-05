@@ -1,0 +1,77 @@
+/* FriendFeed-flavored skin for QuartFeed (circa 2009 look). */
+:root {
+    --ff-blue: #2b5ba8;
+    --ff-blue-light: #3f6cbf;
+    --ff-border: #d3dae6;
+    --ff-muted: #8a94a6;
+    --ff-page: #e9eef5;
+}
+
+body {
+    background: var(--ff-page);
+    color: #1a1a1a;
+}
+
+/* Top bar with the wordmark */
+.navbar {
+    background: #fff !important;
+    border-bottom: 1px solid var(--ff-border);
+}
+.navbar-brand {
+    color: var(--ff-blue) !important;
+    font-weight: 800;
+    font-size: 1.7rem;
+    letter-spacing: -0.5px;
+}
+
+/* Blue "Home" title bar over the feed column */
+.ff-bar {
+    background: linear-gradient(var(--ff-blue-light), var(--ff-blue));
+    color: #fff;
+    font-weight: 700;
+    padding: 7px 14px;
+    border-radius: 6px 6px 0 0;
+    font-size: 0.95rem;
+}
+
+/* Entries: white cards with thin borders, no heavy shadow */
+.card {
+    border: 1px solid var(--ff-border);
+    box-shadow: none;
+}
+.card a.fw-bold {
+    color: var(--ff-blue);
+    text-decoration: none;
+}
+.card a.fw-bold:hover {
+    text-decoration: underline;
+}
+
+a {
+    color: var(--ff-blue);
+}
+
+/* Likes + comments */
+.likes-emoji {
+    font-size: 0.95rem;
+}
+.comment-bubble {
+    color: #9aa7bd;
+}
+.comment {
+    margin-bottom: 2px;
+}
+.likers-more,
+.comments-more {
+    color: var(--ff-blue);
+    cursor: pointer;
+    text-decoration: none;
+}
+.likers-more:hover,
+.comments-more:hover {
+    text-decoration: underline;
+}
+
+time.timeago {
+    color: var(--ff-muted);
+}

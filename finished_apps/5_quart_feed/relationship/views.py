@@ -4,7 +4,7 @@ from quart import Blueprint, abort, current_app, redirect, session, url_for
 from quart_wtf import QuartForm
 from sqlalchemy import delete, insert, select
 
-from helpers import get_user_by_username, login_required
+from utils.helpers import get_user_by_username, login_required
 from relationship.models import relationship_table
 
 relationship_app = Blueprint("relationship_app", __name__)

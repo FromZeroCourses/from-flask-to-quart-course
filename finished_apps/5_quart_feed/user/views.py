@@ -18,7 +18,7 @@ from quart import (
 from sqlalchemy import insert, select, update
 from wand.image import Image
 
-from helpers import get_user_by_id, get_user_by_username, image_url, login_required
+from utils.helpers import get_user_by_id, get_user_by_username, image_url, login_required
 from post.models import post_table
 from relationship.models import relationship_table
 from relationship.views import EmptyForm, followers, is_following

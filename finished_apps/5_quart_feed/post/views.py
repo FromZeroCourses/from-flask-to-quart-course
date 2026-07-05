@@ -16,12 +16,13 @@ from quart import (
 from sqlalchemy import func, insert, select
 
 from comment.models import comment_table
-from helpers import generate_uid, image_url, login_required, slugify
+from utils.feed_ops import fan_out_post
+from utils.helpers import generate_uid, image_url, login_required, slugify
 from like.models import like_table
 from post.forms import PostForm
 from post.models import feed_table, post_table
 from relationship.views import followers
-from sse import ServerSentEvent, broker
+from utils.sse import ServerSentEvent, broker
 from user.models import user_table
 
 post_app = Blueprint("post_app", __name__)
@@ -45,13 +46,19 @@ async def _post_extras(conn: Any, post_id: int, user_id: int) -> Dict[str, Any]:
         )
     ).fetchall()
 
-    like_count = (
+    # Usernames of everyone who liked, oldest-first — drives the FriendFeed
+    # "alice, bob and N other people liked this" line.
+    liker_rows = (
         await conn.execute(
-            select(func.count())
-            .select_from(like_table)
+            select(user_table.c.username)
+            .select_from(
+                like_table.join(user_table, like_table.c.user_id == user_table.c.id)
+            )
             .where(like_table.c.post_id == post_id)
+            .order_by(like_table.c.id.asc())
         )
-    ).scalar_one()
+    ).fetchall()
+    likers = [row.username for row in liker_rows]
 
     liked_by_me = (
         await conn.execute(
@@ -63,7 +70,8 @@ async def _post_extras(conn: Any, post_id: int, user_id: int) -> Dict[str, Any]:
 
     return {
         "comments": comment_rows,
-        "like_count": like_count,
+        "likers": likers,
+        "like_count": len(likers),
         "liked_by_me": liked_by_me,
     }
 
@@ -72,6 +80,10 @@ async def _load_feed(
     conn: Any, user_id: int, offset: int = 0, limit: int = 10
 ) -> List[Dict[str, Any]]:
     """A page of feed rows for ``user_id``, each with comments + like info preloaded."""
+    # Alias the user table a second time to resolve the "reason" user (whoever
+    # bubbled the post into this feed via a comment), via an OUTER join since a
+    # directly-followed post has no reason.
+    reason_user = user_table.alias("reason_user")
     feed_query = (
         select(
             feed_table.c.updated,
@@ -82,11 +94,13 @@ async def _load_feed(
             user_table.c.id.label("author_id"),
             user_table.c.username.label("author_username"),
             user_table.c.image.label("author_image"),
+            feed_table.c.reason_type,
+            reason_user.c.username.label("reason_username"),
         )
         .select_from(
-            feed_table.join(post_table, feed_table.c.post_id == post_table.c.id).join(
-                user_table, post_table.c.user_id == user_table.c.id
-            )
+            feed_table.join(post_table, feed_table.c.post_id == post_table.c.id)
+            .join(user_table, post_table.c.user_id == user_table.c.id)
+            .outerjoin(reason_user, feed_table.c.reason_user_id == reason_user.c.id)
         )
         .where(feed_table.c.user_id == user_id)
         .order_by(feed_table.c.updated.desc())
@@ -107,6 +121,9 @@ async def _load_feed(
                 "author_id": row.author_id,
                 "author_username": row.author_username,
                 "avatar_url": image_url(row.author_id, row.author_image),
+                # Why this post is in the feed (None for a direct follow).
+                "reason_type": row.reason_type,
+                "reason_username": row.reason_username,
                 **extras,
             }
         )
@@ -234,10 +251,7 @@ async def create_post():
             # myself so my own posts show up in my own feed too.
             recipient_ids = set(await followers(conn, session["user_id"]))
             recipient_ids.add(session["user_id"])
-            for recipient_id in recipient_ids:
-                await conn.execute(
-                    insert(feed_table).values(user_id=recipient_id, post_id=post_id)
-                )
+            await fan_out_post(conn, post_id, recipient_ids)
 
             author = (
                 await conn.execute(

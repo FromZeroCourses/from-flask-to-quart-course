@@ -1,9 +1,9 @@
-import os
+import random
 
 from quart import Quart, url_for
 
 from db import get_engine
-from helpers import slugify
+from utils.helpers import slugify
 
 
 def create_app(**config_overrides):
@@ -25,20 +25,13 @@ def create_app(**config_overrides):
     app.register_blueprint(comment_app)
     app.register_blueprint(like_app)
 
-    @app.template_global()
-    def asset_url(filename: str) -> str:
-        """Static URL with an mtime cache-buster.
-
-        Appends ``?v=<file-mtime>`` so the URL changes whenever the file
-        changes. Reloading the page then always fetches the current asset
-        instead of a stale browser-cached copy, while unchanged files stay
-        cacheable.
-        """
-        try:
-            version = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
-        except OSError:
-            version = 0
-        return url_for("static", filename=filename, v=version)
+    @app.context_processor
+    def inject_cache_buster():
+        # A fresh value every request. Appended to static asset URLs as
+        # ?cb=<n> so reloading the page always re-fetches the current JS/CSS
+        # instead of a stale browser-cached copy — handy while students edit
+        # files on the host and watch the page update.
+        return {"cb": random.randint(0, 2**31 - 1)}
 
     @app.template_global()
     def post_url(uid: str, message: str) -> str:

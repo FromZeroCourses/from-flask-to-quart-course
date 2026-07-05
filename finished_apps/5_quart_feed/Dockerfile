@@ -15,4 +15,7 @@ RUN uv sync --no-install-project
 COPY . .
 
 EXPOSE 5000
-CMD uv run quart run --host 0.0.0.0
+# --reload restarts the dev server when a source file changes. The project is
+# bind-mounted (see docker-compose.yml), so editing files on the host updates
+# the running app immediately — no container restart needed.
+CMD uv run quart run --host 0.0.0.0 --reload

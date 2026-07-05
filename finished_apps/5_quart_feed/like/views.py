@@ -4,10 +4,10 @@ from quart import Blueprint, current_app, redirect, session, url_for
 from quart_wtf import QuartForm
 from sqlalchemy import delete, func, insert, select
 
-from helpers import login_required
+from utils.helpers import login_required
 from like.models import like_table
 from post.models import feed_table
-from sse import ServerSentEvent, broker
+from utils.sse import ServerSentEvent, broker
 
 like_app = Blueprint("like_app", __name__)
 

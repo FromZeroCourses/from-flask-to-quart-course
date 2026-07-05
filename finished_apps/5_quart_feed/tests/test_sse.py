@@ -2,7 +2,7 @@ import pytest
 from quart import current_app
 from sqlalchemy import select
 
-from sse import ServerSentEvent, broker
+from utils.sse import ServerSentEvent, broker
 from user.models import user_table
 
 

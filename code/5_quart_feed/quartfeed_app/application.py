@@ -10,9 +10,9 @@ def create_app(**config_overrides):
     # apply overrides for tests
     app.config.update(config_overrides)
 
-    from counter.views import counter_app
+    from user.views import user_app
 
-    app.register_blueprint(counter_app)
+    app.register_blueprint(user_app)
 
     @app.before_serving
     async def create_db_conn():

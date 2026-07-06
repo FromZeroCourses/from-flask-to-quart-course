@@ -1,10 +1,11 @@
-from sqlalchemy import Table, Column, Integer
+from sqlalchemy import Column, Integer, String, Table
 
 from db import metadata
 
-counter_table = Table(
-    "counter",
+user_table = Table(
+    "user",
     metadata,
     Column("id", Integer, primary_key=True),
-    Column("count", Integer),
+    Column("username", String(15), index=True, unique=True),
+    Column("password", String(128)),
 )

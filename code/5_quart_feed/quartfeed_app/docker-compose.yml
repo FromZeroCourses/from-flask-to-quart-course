@@ -5,7 +5,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./:/counter_app
+      - ./:/quartfeed_app
     depends_on:
       - db
     stdin_open: true

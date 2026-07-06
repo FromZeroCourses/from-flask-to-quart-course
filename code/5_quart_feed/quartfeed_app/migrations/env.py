@@ -13,7 +13,7 @@ config = context.config
 import os, sys
 sys.path.insert(0, os.getcwd())
 from db import metadata
-from counter.models import counter_table  # noqa: F401
+from user.models import user_table  # noqa: F401
 config.set_main_option(
     "sqlalchemy.url",
     f"postgresql+asyncpg://{os.environ['DB_USERNAME']}:{os.environ['DB_PASSWORD']}"

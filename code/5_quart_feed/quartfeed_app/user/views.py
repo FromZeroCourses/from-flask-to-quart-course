@@ -1,8 +1,51 @@
-from quart import Blueprint
+from typing import Optional, Union
+
+from passlib.hash import pbkdf2_sha256
+from quart import (
+    Blueprint,
+    Response,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    url_for,
+)
+from sqlalchemy import insert, select
+
+from user.forms import UserForm
+from user.models import user_table
 
 user_app = Blueprint("user_app", __name__)
 
 
-@user_app.route("/register")
-async def register() -> str:
-    return "<h1>User Registration</h1>"
+@user_app.route("/register", methods=["GET", "POST"])
+async def register() -> Union[str, Response]:
+    form = await UserForm.create_form()
+    error: Optional[str] = None
+
+    if await form.validate_on_submit():
+        engine = current_app.dbc  # type: ignore
+        async with engine.begin() as conn:
+            existing = (
+                await conn.execute(
+                    select(user_table).where(
+                        user_table.c.username == form.username.data
+                    )
+                )
+            ).fetchone()
+
+            if existing is not None:
+                error = "User already exists"
+            else:
+                password_hash = pbkdf2_sha256.hash(form.password.data)
+                await conn.execute(
+                    insert(user_table).values(
+                        username=form.username.data, password=password_hash
+                    )
+                )
+
+        if not error:
+            await flash("User registered successfully, please login")
+            return redirect(url_for(".login"))
+
+    return await render_template("user/register.html", form=form, error=error)

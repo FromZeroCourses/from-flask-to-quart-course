@@ -49,3 +49,8 @@ async def register() -> Union[str, Response]:
             return redirect(url_for(".login"))
 
     return await render_template("user/register.html", form=form, error=error)
+
+
+@user_app.route("/login")
+async def login() -> str:
+    return "<h1>Login</h1>"

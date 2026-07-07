@@ -264,7 +264,7 @@ Before we write the view, we need templates to render. We'll start with a base l
 
 This is a standard HTML shell. In the head we pull in Bootstrap's CSS from their CDN so our pages look decent without us writing much styling, and we define a `title` block each page can fill in.
 
-In the body we have a container with a `content` block, which is where each page's real content will go. At the bottom we load Bootstrap's JavaScript, and leave a `scripts` block for pages that need their own JavaScript later, like our live feed.
+In the body we have a container with a `content` block, which is where each page's real content will go. At the bottom we load Bootstrap's JavaScript, and leave a scripts block for pages that need their own JavaScript later, like our live feed.
 
 [Save the file](https://fmze.co/fftq-5.3.4).
 
@@ -310,7 +310,7 @@ A Jinja macro is like a reusable function for templates. This one takes a form f
 
 [Save the file](https://fmze.co/fftq-5.3.6).
 
-Now the registration page. Create a `user` folder inside `templates` and add `register.html`:
+Now the registration page. Create a user folder inside `templates` and add `register.html`:
 
 {lang=html,line-numbers=on}
 ```

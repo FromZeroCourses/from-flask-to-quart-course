@@ -5,3 +5,4 @@ DB_USERNAME=app_user
 DB_PASSWORD=app_password
 DB_HOST=db
 DATABASE_NAME=app
+WTF_CSRF_ENABLED=1

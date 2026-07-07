@@ -155,11 +155,11 @@ Our database now has a `user` table, ready to hold accounts. In the next lesson 
 
 ## Registering Users with quart-wtforms <!-- 5.3 -->
 
-We have a `user` table, so now we need a registration form that writes into it. This is where QuartFeed departs in a big way from how I've taught forms in the past, so let's talk about why.
+We have a `user` table, so now we need a registration form that writes into it. Building forms by hand — reading each field off the request, validating it, and guarding against cross site request forgery — is tedious and easy to get wrong, so we want a library to handle it for us.
 
-In my Flask courses I always reached for Flask-WTF, which handles form fields, validation, and CSRF protection for us. The problem is that Flask-WTF is built around Flask's synchronous request object, so it doesn't work in an async Quart app. For a long time there was no async equivalent, and the original version of this course parsed forms and implemented CSRF by hand.
+In the Flask world, that library is Flask-WTF: it takes care of form fields, validation, and CSRF protection. But there's a catch, and it's the important lesson of this section. Flask-WTF is built around Flask's **synchronous** request object, so it simply does not work inside an async Quart app. And that's the takeaway to hold onto: in an async application, you can't reach for a synchronous library and expect it to work. If a package wasn't written for async — if there's no Quart-flavored version of it — that's usually a sign you shouldn't be using it in a Quart app at all.
 
-The good news is that's no longer necessary. There's now a library called `quart-wtforms` that brings WTForms to Quart the async way, giving us validation and CSRF protection for free. So we'll use it, and skip all the manual work.
+Happily, there is a Quart-flavored version here. It's called `quart-wtforms`, and it brings WTForms to Quart the async way, giving us validation and CSRF protection for free. So we'll use it and let it do the heavy lifting.
 
 Let's add it. Just like every package, we declare it with `uv add --no-sync` so it gets installed when Docker rebuilds the image:
 
@@ -350,7 +350,7 @@ We extend `base.html`, set the title, and drop the navbar at the top of the cont
 
 We import our `render_field` macro and use it for the username and password, so both come out as nicely styled Bootstrap fields. Then we submit the form with a button.
 
-The one line worth pausing on is `{{ form.csrf_token }}`. That renders a hidden field holding the CSRF token, and this single line is our entire cross site request forgery protection. The library generated the token, put it in the form, and will verify it when the form comes back. This is exactly the kind of thing the old course did by hand.
+The one line worth pausing on is `{{ form.csrf_token }}`. That renders a hidden field holding the CSRF token, and this single line is our entire cross site request forgery protection. The library generated the token, put it in the form, and will verify it when the form comes back. Done by hand, CSRF protection is fiddly and easy to get subtly wrong — here it's one line.
 
 [Save the file](https://fmze.co/fftq-5.3.7).
 
@@ -419,7 +419,7 @@ async def register() -> Union[str, Response]:
 
 Our route accepts both `GET` and `POST`. We start by creating the form with `await UserForm.create_form()`. Because reading the incoming request is asynchronous in Quart, building the form is an awaitable, so we `await` it.
 
-The heart of it is `await form.validate_on_submit()`. On a `GET` this is false, so we skip straight to rendering the empty form. On a `POST` it checks the CSRF token and runs our validators, and only returns true if everything passed. That one call replaces all the manual method checks and field validation the old course had to write.
+The heart of it is `await form.validate_on_submit()`. On a `GET` this is false, so we skip straight to rendering the empty form. On a `POST` it checks the CSRF token and runs our validators, and only returns true if everything passed. That one call replaces all the manual request-method checks and field validation we'd otherwise have to write ourselves.
 
 Inside, we grab our database engine from `current_app.dbc`, exactly as we did in the counter app, and open a transaction. First we select any user with the same username. If we find one, we set an error, because usernames must be unique.
 

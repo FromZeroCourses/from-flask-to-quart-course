@@ -429,6 +429,17 @@ Then we insert the new user with the hashed password. If there were no errors, w
 
 [Save the file](https://fmze.co/fftq-5.3.8).
 
+Before we try this out, there's one loose end. Our register view redirects to `login` when a signup succeeds, and our navbar links to it too, but we haven't built that route yet, so the page would crash if we loaded it now. So, exactly like we did with `register` earlier, let's add a placeholder `login` route just below it for now. We'll build the real login page in the next lesson.
+
+{lang=python,line-numbers=on,starting-line-number=51}
+```
+@user_app.route("/login")
+async def login() -> str:
+    return "<h1>Login</h1>"
+```
+
+[Save the file](https://fmze.co/fftq-5.3.9).
+
 Let's try it. Bring up the stack and rebuild so the new packages are in place:
 
 {lang=bash,line-numbers=off}

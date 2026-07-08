@@ -233,7 +233,7 @@ Notice how declarative this is. We describe the fields and their rules once, and
 
 [Save the file](https://fmze.co/fftq-5.3.3).
 
-Before we write the view, we need templates to render. We'll start with a base layout that every page extends. Create a `templates` folder at the project root and add `base.html`. We'll build it in two parts, starting with the document head:
+Before we write the view, we need templates to render. We'll start with a base layout that every page extends. Create a `templates` folder at the project root and add `base.html`:
 
 {lang=html,line-numbers=on}
 ```
@@ -250,12 +250,7 @@ Before we write the view, we need templates to render. We'll start with a base l
 
     <title>{% block title %}{% endblock %} - QuartFeed</title>
 </head>
-```
 
-This is a standard HTML shell. In the head we pull in Bootstrap's CSS from their CDN so our pages look decent without us writing much styling, and we define a `title` block each page can fill in. Now let's add the body:
-
-{lang=html,line-numbers=on,starting-line-number=15}
-```
 <body>
     <div class="container py-3">
         {% block content %}{% endblock %}
@@ -270,6 +265,8 @@ This is a standard HTML shell. In the head we pull in Bootstrap's CSS from their
 
 </html>
 ```
+
+This is a standard HTML shell. In the head we pull in Bootstrap's CSS from their CDN so our pages look decent without us writing much styling, and we define a `title` block each page can fill in.
 
 In the body we have a container with a `content` block, which is where each page's real content will go. At the bottom we load Bootstrap's JavaScript, and leave a scripts block for pages that need their own JavaScript later, like our live feed.
 
@@ -365,7 +362,7 @@ The one line worth pausing on is `{{ form.csrf_token }}`. That renders a hidden 
 
 [Save the file](https://fmze.co/fftq-5.3.7).
 
-Now we can write the real registration view. Open `user/views.py` and rebuild it, starting with the imports we'll lean on the most:
+Now we can write the real registration view. Open `user/views.py` and rebuild it:
 
 {lang=python,line-numbers=on}
 ```
@@ -381,12 +378,6 @@ from quart import (
     render_template,
     url_for,
 )
-```
-
-From `typing` we bring in `Optional` and `Union` for our type hints. From `passlib` we bring in `pbkdf2_sha256`, the hashing scheme we'll use. And from `quart` we import the usual helpers plus `flash`, which lets us stash a one time message for the next page. Now the rest of the imports, plus the blueprint:
-
-{lang=python,line-numbers=on,starting-line-number=13}
-```
 from sqlalchemy import insert, select
 
 from user.forms import UserForm
@@ -395,7 +386,7 @@ from user.models import user_table
 user_app = Blueprint("user_app", __name__)
 ```
 
-We pull in `insert` and `select` from SQLAlchemy for our queries, bring in our form and our model, and create the blueprint for this module.
+We import quite a few things. From `passlib` we bring in `pbkdf2_sha256`, the hashing scheme we'll use. From `quart` we import the usual helpers plus `flash`, which lets us stash a one time message for the next page. And we pull in `insert` and `select` from SQLAlchemy, our form, and our model.
 
 Now the register function itself:
 

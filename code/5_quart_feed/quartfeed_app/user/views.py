@@ -47,6 +47,23 @@ async def register() -> Union[str, Response]:
     return await render_template("user/register.html", form=form, error=error)
 
 
-@user_app.route("/login")
-async def login() -> str:
-    return "<h1>Login</h1>"
+@user_app.route("/login", methods=["GET", "POST"])
+async def login() -> Union[str, Response]:
+    form = await UserForm.create_form()
+    error: Optional[str] = None
+
+    if await form.validate_on_submit():
+        engine = current_app.dbc  # type: ignore
+        async with engine.begin() as conn:
+            user = await get_user_by_username(conn, form.username.data)
+
+        if user is None or not pbkdf2_sha256.verify(
+            form.password.data, user.password
+        ):
+            error = "Invalid username or password"
+        else:
+            session["user_id"] = user.id
+            session["username"] = user.username
+            return redirect(url_for("post_app.home"))
+
+    return await render_template("user/login.html", form=form, error=error)

@@ -67,3 +67,11 @@ async def login() -> Union[str, Response]:
             return redirect(url_for("post_app.home"))
 
     return await render_template("user/login.html", form=form, error=error)
+
+
+@user_app.route("/logout")
+async def logout() -> Response:
+    session.pop("user_id", None)
+    session.pop("username", None)
+    await flash("You have been logged out")
+    return redirect(url_for(".login"))

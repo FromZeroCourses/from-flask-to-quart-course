@@ -159,7 +159,11 @@ We have a `user` table, so now we need a registration form that writes into it. 
 
 In the Flask world, that library is Flask-WTF: it takes care of form fields, validation, and CSRF protection. But there's a catch, and it's the important lesson of this section. Flask-WTF is built around Flask's **synchronous** request object, so it simply does not work inside an async Quart app. And that's the takeaway to hold onto: in an async application, you can't reach for a synchronous library and expect it to work. If a package wasn't written for async — if there's no Quart-flavored version of it — that's usually a sign you shouldn't be using it in a Quart app at all.
 
+![Flask-WTF is built on Flask's synchronous request object, so it can't work inside Quart's async event loop.](images/5.3-scene2-img1.png)
+
 Happily, there is a Quart-flavored version here. It's called `quart-wtforms`, and it brings WTForms to Quart the async way, giving us validation and CSRF protection for free. So we'll use it and let it do the heavy lifting.
+
+![quart-wtforms brings WTForms to Quart the async way, giving us form validation and CSRF protection for free.](images/5.3-scene2-img2.png)
 
 Let's add it. Just like every package, we declare it with `uv add --no-sync` so it gets installed when Docker rebuilds the image:
 
@@ -308,6 +312,8 @@ WTForms can render fields for us, but we want each one wrapped in Bootstrap mark
 
 A Jinja macro is like a reusable function for templates. This one takes a form field and renders its label, the input itself, and, if the field failed validation, a red list of the error messages. We'll call `render_field` for every field so our forms stay consistent and short.
 
+![One render_field macro expands every form field into its label, input, and validation errors — write once, reuse.](images/5.3-scene9-img1.png)
+
 [Save the file](https://fmze.co/fftq-5.3.6).
 
 Now the registration page. Create a user folder inside `templates` and add `register.html`:
@@ -349,6 +355,8 @@ Now the registration page. Create a user folder inside `templates` and add `regi
 We extend `base.html`, set the title, and drop the navbar at the top of the content block. Then we center a column on the page and show an error alert if the view passed one in.
 
 We import our `render_field` macro and use it for the username and password, so both come out as nicely styled Bootstrap fields. Then we submit the form with a button.
+
+![The login template reuses the render_field macro for the username and password fields.](images/5.3-scene10-img1.png)
 
 The one line worth pausing on is `{{ form.csrf_token }}`. That renders a hidden field holding the CSRF token, and this single line is our entire cross site request forgery protection. The library generated the token, put it in the form, and will verify it when the form comes back. Done by hand, CSRF protection is fiddly and easy to get subtly wrong — here it's one line.
 

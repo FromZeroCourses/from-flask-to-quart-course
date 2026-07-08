@@ -233,7 +233,7 @@ Notice how declarative this is. We describe the fields and their rules once, and
 
 [Save the file](https://fmze.co/fftq-5.3.3).
 
-Before we write the view, we need templates to render. We'll start with a base layout that every page extends. Create a `templates` folder at the project root and add `base.html`:
+Before we write the view, we need templates to render. We'll start with a base layout that every page extends. Create a `templates` folder at the project root and add `base.html`. It's a longer file, so we'll build it in two parts, starting with the document head:
 
 {lang=html,line-numbers=on}
 ```
@@ -250,7 +250,12 @@ Before we write the view, we need templates to render. We'll start with a base l
 
     <title>{% block title %}{% endblock %} - QuartFeed</title>
 </head>
+```
 
+This is a standard HTML shell. In the head we pull in Bootstrap's CSS from their CDN so our pages look decent without us writing much styling, and we define a `title` block each page can fill in. Now the body:
+
+{lang=html,line-numbers=on,starting-line-number=15}
+```
 <body>
     <div class="container py-3">
         {% block content %}{% endblock %}
@@ -265,8 +270,6 @@ Before we write the view, we need templates to render. We'll start with a base l
 
 </html>
 ```
-
-This is a standard HTML shell. In the head we pull in Bootstrap's CSS from their CDN so our pages look decent without us writing much styling, and we define a `title` block each page can fill in.
 
 In the body we have a container with a `content` block, which is where each page's real content will go. At the bottom we load Bootstrap's JavaScript, and leave a scripts block for pages that need their own JavaScript later, like our live feed.
 

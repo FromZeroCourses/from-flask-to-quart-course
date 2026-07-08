@@ -6,13 +6,23 @@ In the next few lessons, we’ll build a counter app that will be a good boilerp
 
 But before we start writing the application, we need to understand one of the many quirks we’ll see when working with asynchronous applications, and this one is related to database ORMs.
 
+![The counter app stores its value in PostgreSQL and bumps it on every page reload.](images/4.1-scene1-img1.png)
+
 For our original Flask database boilerplate application, we used SQLAlchemy ORM, the Python Database Object Relational Mapper. However, for async projects we can’t use the same library the same way without some form of penalization.
+
+![An ORM maps Python objects to database rows and back.](images/4.1-scene3-img1.png)
 
 Flask-SQLAlchemy does work with Quart using the `flask_patch` function we discussed earlier, but it doesn't yield to the event loop when it reads or writes. This will mean it cannot handle much concurrent load, only a couple of concurrent requests.
 
+![A blocking database call stalls the event loop, so the app can only handle a couple of concurrent requests.](images/4.1-scene4-img1.png)
+
 However, we don’t need to go back to using raw SQL queries in our codebase. SQLAlchemy 2.0 ships with native `asyncio` support, so we can use the SQLAlchemy Core package to express our queries in a nice way and run them against an asynchronous engine, without sacrificing performance.
 
+![With SQLAlchemy 2.0's native async support, the event loop keeps serving other requests while a query runs.](images/4.1-scene5-img1.png)
+
 To talk to Postgres asynchronously, we’ll pair that async engine with `asyncpg`, a fast async Postgres driver. No third-party wrappers needed. It’s all first-party SQLAlchemy now.
+
+![Quart talks to PostgreSQL through SQLAlchemy's async engine and the asyncpg driver — all first-party, no wrappers.](images/4.1-scene6-img1.png)
 
 So let’s go ahead and start coding our Quart Postgres counter application.
 
@@ -23,6 +33,8 @@ We now need two services to be running for our application: the Quart web server
 For this and all of my other courses, I will be focusing on developing with Docker, as this is the preferred development environment used by professional teams. The whole point is repeatability: everything runs inside containers, so you don't have to install Python, `uv`, or Postgres on your own machine. If you haven't used Docker before, don't worry.
 
 So let's go ahead and set up our Docker development environment.
+
+![Docker packages our app and its dependencies into portable containers.](images/4.2-docker-whale.png)
 
 First, you need to download the Docker desktop client for Windows or Mac, which you can find in the [Docker website](https://www.docker.com/products/docker-desktop). Just follow the instructions.
 
@@ -148,6 +160,8 @@ We won't start the Docker containers yet, as we need a couple of more things in 
 ## Initial Setup <!-- 4.3 -->
 
 So let’s go ahead and start setting up our Quart counter application. Like I’ve done in other courses, we’re going to build a web application that stores a counter in the database and increases it by one every time you reload the page. This will allow us to see how a typical Quart database application is laid out.
+
+![We'll build a Quart app that stores a counter in the database and bumps it on every page reload.](images/4.3-scene1-img1.png)
 
 One new thing we’ll use here is Alembic for database migrations. Alembic is what powers Flask-Migrations under the hood. Even though it’s a bit more complicated to set it up the first time, we will be using this application as a boilerplate when we create other database-driven Quart applications down the road, so we won’t have to repeat the setup from scratch again.
 
@@ -634,11 +648,21 @@ Ok, with that out of the way let’s see how `pytest` works.
 
 The `pytest` library works in a modular fashion using reusable functions called _fixtures_. Fixtures allow you to put the repetitive stuff in one function and then add them to the tests that need them.
 
+![A pytest fixture is reusable setup that many tests can share.](images/4.7-scene6-img1.png)
+
 The cool thing about these fixtures is that they can be used in a layered format, allowing you to build very complex foundations. Unfortunately this is also `pytest`’s Achilles’ heel, as some teams make such complex “fixture onions” that any newcomer will spend lots of time to learn them. My recommendation is to always make tests as readable as possible, so avoid doing more than three layers of fixtures and keep them as single-purpose as possible with very descriptive names.
+
+![Fixtures can depend on other fixtures: asking for the top of the chain pulls in the whole stack automatically.](images/4.7-scene6-img4.png)
+
+![Keep fixtures shallow — three layers or fewer — or they become a hard-to-learn “fixture onion.”](images/4.7-scene6-img5.png)
 
 These fixtures can live in the same test files that use them or you can put them in a special file called `conftest`. Any `conftest` fixtures on a parent directory are available to the tests in the child directories. You’ll get the hang of it as you start building your tests.
 
+![A conftest.py shares its fixtures with every test in its directory and below.](images/4.7-scene7-img2.png)
+
 The other difference with `unittest` is that `pytest` doesn’t require classes, although they can still be used.
+
+![Unlike unittest, pytest tests are plain functions — no class required.](images/4.7-scene7-img3.png)
 
 To follow the standard Python directory structure, we'll create a `tests` folder on the root level where the `conftest` and all the tests will live.
 

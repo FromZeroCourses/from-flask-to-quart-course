@@ -8,10 +8,12 @@ from quart import (
     flash,
     redirect,
     render_template,
+    session,
     url_for,
 )
 from sqlalchemy import insert, select
 
+from utils.helpers import get_user_by_username
 from user.forms import UserForm
 from user.models import user_table
 
@@ -26,13 +28,7 @@ async def register() -> Union[str, Response]:
     if await form.validate_on_submit():
         engine = current_app.dbc  # type: ignore
         async with engine.begin() as conn:
-            existing = (
-                await conn.execute(
-                    select(user_table).where(
-                        user_table.c.username == form.username.data
-                    )
-                )
-            ).fetchone()
+            existing = await get_user_by_username(conn, form.username.data)
 
             if existing is not None:
                 error = "User already exists"

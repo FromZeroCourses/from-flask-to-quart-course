@@ -466,6 +466,8 @@ We can create users, but they can't come back and prove who they are. In this le
 
 Logging in is the mirror image of registering. We look up the user by their username, then check that the password they typed matches the hash we stored. Both register and login need that "find a user by username" lookup, so this is a good moment to pull it into a shared helper instead of writing the query twice.
 
+![Register and login both share one username lookup](images/5.4-scene2-img1.png)
+
 Let's create a `utils` folder at the project root, with an empty `__init__.py` so it's a package, and a `helpers.py` file inside it:
 
 {lang=python,line-numbers=on}

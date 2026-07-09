@@ -11,8 +11,10 @@ def create_app(**config_overrides):
     app.config.update(config_overrides)
 
     from user.views import user_app
+    from post.views import post_app
 
     app.register_blueprint(user_app)
+    app.register_blueprint(post_app)
 
     @app.before_serving
     async def create_db_conn():

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+
+{% include "navbar.html" %}
+
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+
+        {% for message in get_flashed_messages() %}
+        <div class="alert alert-success">{{ message }}</div>
+        {% endfor %}
+
+        <h1>Welcome, {{ session.username }}!</h1>
+        <p>You're logged in. The friend feed lands here in the next section.</p>
+
+    </div>
+</div>
+
+{% endblock %}

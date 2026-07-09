@@ -514,6 +514,17 @@ from user.models import user_table
 
 Now that we have the helper, simplify the duplicate check in `register` to use it: replace the inline select with a call to `get_user_by_username(conn, form.username.data)`.
 
+{lang=python,line-numbers=on,starting-line-number=28}
+```
+    if await form.validate_on_submit():
+        engine = current_app.dbc  # type: ignore
+        async with engine.begin() as conn:
+            existing = await get_user_by_username(conn, form.username.data)
+
+            if existing is not None:
+                error = "User already exists"
+```
+
 [Save the file](https://fmze.co/fftq-5.4.2) and let's write the login view below `register`:
 
 {lang=python,line-numbers=on,starting-line-number=40}

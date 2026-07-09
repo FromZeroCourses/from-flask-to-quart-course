@@ -546,7 +546,67 @@ Then comes the check. We reject the login if there's no such user, or if `pbkdf2
 
 Here's a subtle but important security choice: whether the username was wrong or the password was wrong, we return the exact same message, "Invalid username or password". If we said "no such user" versus "wrong password", we'd be telling an attacker which usernames exist. So we stay vague on purpose.
 
-If the credentials are good, we log the person in by storing their id and username in the `session`. The session is a small, signed cookie Quart manages for us. On every later request we can read `session["user_id"]` to know who's making it. Then we redirect to the home feed, which we'll build later this chapter.
+If the credentials are good, we log the person in by storing their id and username in the `session`. The session is a small, signed cookie Quart manages for us. On every later request we can read `session["user_id"]` to know who's making it. Then we redirect to `post_app.home` — but that endpoint doesn't exist yet, so login has nowhere to land. Let's build a minimal home page for it.
+
+Create a `post` package with a `views.py`. Later this chapter it'll grow into the friend feed; for now it just needs a home route:
+
+{lang=python,line-numbers=on}
+```
+from quart import Blueprint, redirect, render_template, session, url_for
+
+post_app = Blueprint("post_app", __name__)
+
+
+@post_app.route("/")
+async def home():
+    if session.get("username") is None:
+        return redirect(url_for("user_app.login"))
+
+    return await render_template("post/home.html")
+```
+
+The route is guarded: if there's no `username` in the session, a logged-out visitor is bounced back to login. Otherwise we render the home template.
+
+Register the blueprint in `application.py`, right alongside `user_app`:
+
+{lang=python,line-numbers=on,starting-line-number=13}
+```
+    from user.views import user_app
+    from post.views import post_app
+
+    app.register_blueprint(user_app)
+    app.register_blueprint(post_app)
+```
+
+Now the template. Create `templates/post/home.html`:
+
+{lang=html,line-numbers=on}
+```
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+
+{% include "navbar.html" %}
+
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+
+        {% for message in get_flashed_messages() %}
+        <div class="alert alert-success">{{ message }}</div>
+        {% endfor %}
+
+        <h1>Welcome, {{ session.username }}!</h1>
+        <p>You're logged in. The friend feed lands here in the next section.</p>
+
+    </div>
+</div>
+
+{% endblock %}
+```
+
+It reads `session.username` straight from the session to greet the user by name — visible proof the login stuck. Now login has a real page to land on.
 
 [Save the file](https://fmze.co/fftq-5.4.3).
 

@@ -491,7 +491,7 @@ This is just the username lookup we wrote inline in the register view, moved int
 
 [Save the file](https://fmze.co/fftq-5.4.1).
 
-Let's use it back in `user/views.py`. First update the imports to bring in `session` from Quart and our new helper, and to add `verify` alongside the hasher:
+Let's use it back in `user/views.py`. First update the imports to bring in `session` from Quart and our new helper `get_user_by_username`:
 
 {lang=python,line-numbers=on,starting-line-number=4}
 ```

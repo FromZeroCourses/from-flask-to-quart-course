@@ -11,9 +11,11 @@ def create_app(**config_overrides):
     app.config.update(config_overrides)
 
     from user.views import user_app
+    from relationship.views import relationship_app
     from post.views import post_app
 
     app.register_blueprint(user_app)
+    app.register_blueprint(relationship_app)
     app.register_blueprint(post_app)
 
     @app.before_serving

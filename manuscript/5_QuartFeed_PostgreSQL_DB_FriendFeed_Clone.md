@@ -887,7 +887,9 @@ Now register the blueprint. Open `application.py`, import `relationship_app`, an
     app.register_blueprint(relationship_app)
 ```
 
-[Save the file](https://fmze.co/fftq-5.5.4) and tell Alembic about the new model. Open `migrations/env.py` and add the import next to the user one:
+[Save the file](https://fmze.co/fftq-5.5.4).
+
+Now tell Alembic about the new model. Open `migrations/env.py` and add the import next to the user one:
 
 {lang=python,line-numbers=on,starting-line-number=17}
 ```

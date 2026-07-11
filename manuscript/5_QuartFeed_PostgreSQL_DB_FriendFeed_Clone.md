@@ -896,7 +896,9 @@ Now tell Alembic about the new model. Open `migrations/env.py` and add the impor
 from relationship.models import relationship_table  # noqa: F401
 ```
 
-[Save the file](https://fmze.co/fftq-5.5.5) and run the migration for the new table:
+[Save the file](https://fmze.co/fftq-5.5.5).
+
+Now run the migration for the new table:
 
 {lang=bash,line-numbers=off}
 ```

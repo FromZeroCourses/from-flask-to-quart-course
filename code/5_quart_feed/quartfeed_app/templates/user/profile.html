@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}{{ profile_user.username }}{% endblock %}
+
+{% block content %}
+
+{% include "navbar.html" %}
+
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+
+        <h3>@{{ profile_user.username }}</h3>
+        <p class="text-muted">{{ follower_count }} followers</p>
+
+        {% if relationship == "following" %}
+        <form method="POST" action="{{ url_for('relationship_app.unfollow', username=profile_user.username) }}">
+            {{ follow_form.csrf_token }}
+            <button type="submit" class="btn btn-outline-secondary">Unfollow</button>
+        </form>
+        {% elif relationship == "not_following" %}
+        <form method="POST" action="{{ url_for('relationship_app.follow', username=profile_user.username) }}">
+            {{ follow_form.csrf_token }}
+            <button type="submit" class="btn btn-primary">Follow</button>
+        </form>
+        {% endif %}
+
+    </div>
+</div>
+
+{% endblock %}

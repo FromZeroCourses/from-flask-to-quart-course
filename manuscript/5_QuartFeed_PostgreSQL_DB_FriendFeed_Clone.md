@@ -911,7 +911,7 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "create 
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-The follow buttons live on a user's profile, and we don't have a profile page yet, so let's add a simple one. Open `user/views.py`. We'll need a few more imports, `abort` and `session`, plus our helpers and the relationship functions:
+The follow buttons live on a user's profile, and we don't have a profile page yet, so let's add a simple one. Open `user/views.py`. We'll need a few more imports here, plus our helpers and the relationship functions:
 
 {lang=python,line-numbers=on,starting-line-number=16}
 ```

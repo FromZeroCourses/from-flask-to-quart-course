@@ -743,6 +743,10 @@ There's one detail that's easy to get wrong in an async app. The wrapper, `decor
 
 Now the model. We need to decide what a "follow" actually is. On Facebook, friendship is mutual: if we're friends, we both see each other. On Twitter, following is one directional: I can follow you without you following me back. We'll go with the Twitter style, because it's simpler and it's what a feed really needs.
 
+![](images/5.5-scene4-img1.png)
+
+![](images/5.5-scene4-img2.png)
+
 Create a `relationship` folder with an empty `__init__.py`, and a `models.py` inside it:
 
 {lang=python,line-numbers=on}

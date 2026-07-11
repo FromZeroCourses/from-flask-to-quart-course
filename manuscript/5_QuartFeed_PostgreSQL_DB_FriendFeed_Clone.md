@@ -705,7 +705,7 @@ Let's test the whole loop. Restart the app, register if you haven't, then log in
 
 A feed is only interesting if it's a feed of people you follow, so before we can build one, users need to be able to follow each other. In this lesson we'll model that relationship, and we'll also write our first custom decorator to protect the routes that change it.
 
-Let's start with the decorator, because we're about to need it. Following someone should only be possible when you're logged in. We could check the session at the top of every protected view, but that gets repetitive fast. Instead we'll write a `login_required` decorator once and apply it wherever we need it.
+Let's start with the decorator, because we're about to need it. Following someone should only be possible when you're logged in. We could check the session at the top of every protected view, but that gets repetitive fast. Instead we'll write a login_required decorator once and apply it wherever we need it.
 
 Open `utils/helpers.py` and add the decorator. First extend the imports at the top:
 

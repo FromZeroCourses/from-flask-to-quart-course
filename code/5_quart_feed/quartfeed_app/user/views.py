@@ -4,6 +4,7 @@ from passlib.hash import pbkdf2_sha256
 from quart import (
     Blueprint,
     Response,
+    abort,
     current_app,
     flash,
     redirect,
@@ -13,7 +14,9 @@ from quart import (
 )
 from sqlalchemy import insert, select
 
-from utils.helpers import get_user_by_username
+from utils.helpers import get_user_by_username, login_required
+from relationship.models import relationship_table
+from relationship.views import EmptyForm, is_following
 from user.forms import UserForm
 from user.models import user_table
 
@@ -75,3 +78,39 @@ async def logout() -> Response:
     session.pop("username", None)
     await flash("You have been logged out")
     return redirect(url_for(".login"))
+
+
+@user_app.route("/user/<username>")
+async def profile(username: str) -> str:
+    engine = current_app.dbc  # type: ignore
+    async with engine.begin() as conn:
+        profile_user = await get_user_by_username(conn, username)
+        if profile_user is None:
+            abort(404)
+
+        my_user_id = session.get("user_id")
+        if profile_user.id == my_user_id:
+            relationship = "self"
+        elif my_user_id is not None and await is_following(
+            conn, my_user_id, profile_user.id
+        ):
+            relationship = "following"
+        else:
+            relationship = "not_following"
+
+        followers_result = await conn.execute(
+            select(relationship_table).where(
+                relationship_table.c.to_user_id == profile_user.id
+            )
+        )
+        follower_count = len(followers_result.fetchall())
+
+    follow_form = await EmptyForm.create_form()
+
+    return await render_template(
+        "user/profile.html",
+        profile_user=profile_user,
+        relationship=relationship,
+        follower_count=follower_count,
+        follow_form=follow_form,
+    )

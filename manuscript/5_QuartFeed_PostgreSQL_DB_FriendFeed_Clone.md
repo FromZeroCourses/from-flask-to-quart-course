@@ -890,6 +890,8 @@ async def unfollow(username: str):
 
 Same shape, same protection. We find the target user and delete the row where you follow them. If the row isn't there, the delete simply affects nothing, which is fine.
 
+![EmptyForm renders no visible inputs at all, just a hidden CSRF token and the button: the smallest possible protected form.](images/5.5-scene5-img2.png)
+
 [Save the file](https://fmze.co/fftq-5.5.3).
 
 Now register the blueprint. Open `application.py`, import `relationship_app`, and register it alongside `user_app`:

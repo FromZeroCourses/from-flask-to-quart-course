@@ -803,6 +803,8 @@ We set up the blueprint and, right away, a form with no fields. Why a form for a
 
 Next, two small query helpers in the same file:
 
+![Both helpers are plain queries against the relationship table: is_following answers yes or no, followers returns the ids whose feeds a new post should reach.](images/5.5-scene5-img3.png)
+
 {lang=python,line-numbers=on,starting-line-number=15}
 ```
 async def is_following(conn, fm_user_id: int, to_user_id: int) -> bool:

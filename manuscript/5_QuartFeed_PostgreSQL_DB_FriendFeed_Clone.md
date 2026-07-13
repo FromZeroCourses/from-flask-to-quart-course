@@ -707,8 +707,6 @@ A feed is only interesting if it's a feed of people you follow, so before we can
 
 Let's start with the decorator, because we're about to need it. Following someone should only be possible when you're logged in. We could check the session at the top of every protected view, but that gets repetitive fast. Instead we'll write a login_required decorator once and apply it wherever we need it.
 
-![Without a decorator, the same logged-in session check gets copied into the follow, unfollow, and feed views, one duplicated guard per protected route.](images/5.5-scene2-img1.png)
-
 Open `utils/helpers.py` and add the decorator. First extend the imports at the top:
 
 {lang=python,line-numbers=on,starting-line-number=1}
@@ -722,10 +720,6 @@ from sqlalchemy.engine import Row
 
 from user.models import user_table
 ```
-
-A couple of those imports are new. We bring in `wraps` from `functools` so our wrapper keeps the original view's name and metadata instead of masquerading as the inner function, and `Callable` is the type hint for the function we're wrapping.
-
-The `redirect`, `request`, `session`, and `url_for` names come from Quart. Those are what the decorator uses to read the session and bounce a logged-out visitor over to the login page.
 
 Then add the decorator below `get_user_by_username`:
 
@@ -741,23 +735,17 @@ def login_required(f: Callable) -> Callable:
     return decorated_function
 ```
 
-A decorator is a function that wraps another function to add behavior around it. Ours wraps a view: before the view ever runs, `decorated_function` looks in the session for a username.
-
-If there's no username, nobody is logged in, so we redirect to the login page. Notice we pass the current URL along as `next`, so once they log in we can send them straight back to the page they were trying to reach.
-
-If a username is there, the guard passes, so we `await` the original view and return whatever it hands back. The view runs exactly as it normally would; the decorator just gets a say first.
+A decorator is a function that wraps another function to add behavior around it. Ours wraps a view: before the view runs, it checks the session, and if nobody's logged in, it redirects to the login page instead of running the view.
 
 There's one detail that's easy to get wrong in an async app. The wrapper, `decorated_function`, is itself declared `async`, and it awaits the real view. If we wrote a plain function that returned a coroutine, Quart wouldn't recognize it as a coroutine function and wouldn't await it properly. So the wrapper must be async too.
-
-![Write the session check once as login_required, then every protected view opts in with a single @login_required line instead of repeating the guard.](images/5.5-scene2-img2.png)
 
 [Save the file](https://fmze.co/fftq-5.5.1).
 
 Now the model. We need to decide what a "follow" actually is. On Facebook, friendship is mutual: if we're friends, we both see each other. On Twitter, following is one directional: I can follow you without you following me back. We'll go with the Twitter style, because it's simpler and it's what a feed really needs.
 
-![On Facebook friendship is mutual: connect once and both people follow each other, so the relationship always points both ways.](images/5.5-scene4-img1.png)
+![](images/5.5-scene4-img1.png)
 
-![On Twitter following is one-directional: you follow someone without them following back, and this is the model QuartFeed uses.](images/5.5-scene4-img2.png)
+![](images/5.5-scene4-img2.png)
 
 Create a `relationship` folder with an empty `__init__.py`, and a `models.py` inside it:
 

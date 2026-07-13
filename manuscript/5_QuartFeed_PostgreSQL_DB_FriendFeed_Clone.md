@@ -737,6 +737,8 @@ def login_required(f: Callable) -> Callable:
 
 A decorator is a function that wraps another function to add behavior around it. Ours wraps a view: before the view runs, it checks the session, and if nobody's logged in, it redirects to the login page instead of running the view.
 
+![A decorator wraps the view: it checks the session first, redirects to login if nobody is logged in, and only then awaits the real view.](images/5.5-scene2-img3.png)
+
 There's one detail that's easy to get wrong in an async app. The wrapper, `decorated_function`, is itself declared `async`, and it awaits the real view. If we wrote a plain function that returned a coroutine, Quart wouldn't recognize it as a coroutine function and wouldn't await it properly. So the wrapper must be async too.
 
 ![The wrapper must be declared async and await the view, otherwise it just returns a coroutine that Quart never awaits.](images/5.5-scene2-img4.png)

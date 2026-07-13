@@ -705,7 +705,7 @@ Let's test the whole loop. Restart the app, register if you haven't, then log in
 
 A feed is only interesting if it's a feed of people you follow, so before we can build one, users need to be able to follow each other. In this lesson we'll model that relationship, and we'll also write our first custom decorator to protect the routes that change it.
 
-Let's start with the decorator, because we're about to need it. Following someone should only be possible when you're logged in. We could check the session at the top of every protected view, but that gets repetitive fast. Instead we'll write a `login_required` decorator once and apply it wherever we need it.
+Let's start with the decorator, because we're about to need it. Following someone should only be possible when you're logged in. We could check the session at the top of every protected view, but that gets repetitive fast. Instead we'll write a login_required decorator once and apply it wherever we need it.
 
 Open `utils/helpers.py` and add the decorator. First extend the imports at the top:
 
@@ -739,9 +739,15 @@ A decorator is a function that wraps another function to add behavior around it.
 
 There's one detail that's easy to get wrong in an async app. The wrapper, `decorated_function`, is itself declared `async`, and it awaits the real view. If we wrote a plain function that returned a coroutine, Quart wouldn't recognize it as a coroutine function and wouldn't await it properly. So the wrapper must be async too.
 
+![The wrapper must be declared async and await the view, otherwise it just returns a coroutine that Quart never awaits.](images/5.5-scene2-img4.png)
+
 [Save the file](https://fmze.co/fftq-5.5.1).
 
 Now the model. We need to decide what a "follow" actually is. On Facebook, friendship is mutual: if we're friends, we both see each other. On Twitter, following is one directional: I can follow you without you following me back. We'll go with the Twitter style, because it's simpler and it's what a feed really needs.
+
+![](images/5.5-scene4-img1.png)
+
+![](images/5.5-scene4-img2.png)
 
 Create a `relationship` folder with an empty `__init__.py`, and a `models.py` inside it:
 
@@ -907,7 +913,7 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "create 
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-The follow buttons live on a user's profile, and we don't have a profile page yet, so let's add a simple one. Open `user/views.py`. We'll need a few more imports, `abort` and `session`, plus our helpers and the relationship functions:
+The follow buttons live on a user's profile, and we don't have a profile page yet, so let's add a simple one. Open `user/views.py`. We'll need a few more imports here, plus our helpers and the relationship functions:
 
 {lang=python,line-numbers=on,starting-line-number=16}
 ```

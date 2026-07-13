@@ -861,6 +861,8 @@ Here's the decorator paying off. We stack `@login_required` right under the rout
 
 Then we insert the follow, but only if two things hold: you're not trying to follow yourself, and you're not already following them. That guard keeps the table clean and avoids duplicate rows. When we're done, we send you back to the profile you were looking at.
 
+![A follow changes data, so it travels as a POST, and every POST must carry a valid CSRF token, which is what lets the server reject a forged request from another site.](images/5.5-scene5-img1.png)
+
 Unfollow is the reverse, a `delete` instead of an `insert`:
 
 {lang=python,line-numbers=on,starting-line-number=54}

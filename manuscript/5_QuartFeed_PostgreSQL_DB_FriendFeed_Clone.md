@@ -707,6 +707,8 @@ A feed is only interesting if it's a feed of people you follow, so before we can
 
 Let's start with the decorator, because we're about to need it. Following someone should only be possible when you're logged in. We could check the session at the top of every protected view, but that gets repetitive fast. Instead we'll write a login_required decorator once and apply it wherever we need it.
 
+![Instead of repeating the same session check at the top of every protected view, write the guard once as a decorator and apply it wherever it's needed.](images/5.5-scene2-img2.png)
+
 ![Following someone should only work when there's a session: a logged-out visitor is redirected to the login page and the view never runs.](images/5.5-scene2-img1.png)
 
 Open `utils/helpers.py` and add the decorator. First extend the imports at the top:

@@ -978,6 +978,8 @@ We look up the user whose profile this is and 404 if they don't exist. Then we w
 
 The one new-looking thing is `follow_form`. We create an `EmptyForm` and hand it to the template purely so the follow and unfollow buttons have a CSRF token to submit. We'll reuse this pattern every time a page has an action button.
 
+![An EmptyForm carries no fields at all, only a CSRF token, and that token is what lets the Follow and Unfollow buttons POST safely.](images/5.5-scene10-img2.png)
+
 [Save the file](https://fmze.co/fftq-5.5.6).
 
 Finally the profile template. Create `templates/user/profile.html`:

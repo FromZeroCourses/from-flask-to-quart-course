@@ -711,7 +711,7 @@ Let's start with the decorator, because we're about to need it. Following someon
 
 ![Following someone should only work when there's a session: a logged-out visitor is redirected to the login page and the view never runs.](images/5.5-scene2-img1.png)
 
-Open `utils/helpers.py` and add the decorator. First extend the imports at the top:
+Open the `helpers.py` file in `utils` and extend the imports at the top. We need `wraps` from `functools`, which keeps the wrapped view's name and docstring intact; `Callable` from `typing` for the annotations; and from Quart, `redirect`, `request`, `session` and `url_for`, which together are everything the decorator needs to inspect who is logged in and send everybody else to the login page:
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```

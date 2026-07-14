@@ -707,6 +707,7 @@ A feed is only interesting if it's a feed of people you follow, so before we can
 
 Let's start with the decorator, because we're about to need it. Following someone should only be possible when you're logged in. We could check the session at the top of every protected view, but that gets repetitive fast. Instead we'll write a login_required decorator once and apply it wherever we need it.
 
+![Write the logged-in check once as a login_required decorator, then reuse it on every protected view instead of repeating it.](images/5.5-scene2-img1.png)
 
 Open the `helpers.py` file in `utils` and extend the imports at the top. We need `wraps` from `functools`, which keeps the wrapped view's name and docstring intact; `Callable` from `typing` for the annotations; and from Quart, `redirect`, `request`, `session` and `url_for`, which together are everything the decorator needs to inspect who is logged in and send everybody else to the login page:
 
@@ -738,14 +739,11 @@ def login_required(f: Callable) -> Callable:
 
 A decorator is a function that wraps another function to add behavior around it. Ours wraps a view: before the view runs, it checks the session, and if nobody's logged in, it redirects to the login page instead of running the view.
 
-
 There's one detail that's easy to get wrong in an async app. The wrapper, `decorated_function`, is itself declared `async`, and it awaits the real view. If we wrote a plain function that returned a coroutine, Quart wouldn't recognize it as a coroutine function and wouldn't await it properly. So the wrapper must be async too.
-
 
 [Save the file](https://fmze.co/fftq-5.5.1).
 
 Now the model. We need to decide what a "follow" actually is. On Facebook, friendship is mutual: if we're friends, we both see each other. On Twitter, following is one directional: I can follow you without you following me back. We'll go with the Twitter style, because it's simpler and it's what a feed really needs.
-
 
 Create a `relationship` folder with an empty `__init__.py`, and a `models.py` inside it:
 
@@ -794,7 +792,6 @@ class EmptyForm(QuartForm):
 We set up the blueprint and, right away, a form with no fields. Why a form for a follow button? Because following changes data, so it must be a `POST`, and every `POST` in our app is CSRF protected. `EmptyForm` has no visible inputs, but it still carries a CSRF token we can validate. It's the smallest possible protected form.
 
 Next, two small query helpers in the same file:
-
 
 {lang=python,line-numbers=on,starting-line-number=15}
 ```
@@ -852,7 +849,6 @@ Here's the decorator paying off. We stack `@login_required` right under the rout
 
 Then we insert the follow, but only if two things hold: you're not trying to follow yourself, and you're not already following them. That guard keeps the table clean and avoids duplicate rows. When we're done, we send you back to the profile you were looking at.
 
-
 Unfollow is the reverse, a `delete` instead of an `insert`:
 
 {lang=python,line-numbers=on,starting-line-number=54}
@@ -879,7 +875,6 @@ async def unfollow(username: str):
 ```
 
 Same shape, same protection. We find the target user and delete the row where you follow them. If the row isn't there, the delete simply affects nothing, which is fine.
-
 
 [Save the file](https://fmze.co/fftq-5.5.3).
 

@@ -725,7 +725,7 @@ from user.models import user_table
 
 Then add the decorator below `get_user_by_username`:
 
-{lang=python,line-numbers=on,starting-line-number=17}
+{lang=python,line-numbers=on,starting-line-number=18}
 ```
 def login_required(f: Callable) -> Callable:
     @wraps(f)

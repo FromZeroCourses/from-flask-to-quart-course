@@ -767,6 +767,8 @@ This table is interesting because it points back at the `user` table twice. Each
 
 Both columns are foreign keys to `user.id`. A foreign key tells the database these values must be real user ids, so we can never have a follow that points at a user who doesn't exist. A single table referencing another table from two different columns like this is how you model a graph of connections between rows of the same kind.
 
+![One relationship table references the user table from two columns, fm_user_id and to_user_id, modelling a graph of follows between users.](images/5.5-scene3-img3.png)
+
 [Save the file](https://fmze.co/fftq-5.5.2).
 
 Now the views. Create `relationship/views.py`:

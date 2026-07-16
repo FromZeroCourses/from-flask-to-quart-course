@@ -801,6 +801,8 @@ class EmptyForm(QuartForm):
 
 We set up the blueprint and, right away, a form with no fields. Why a form for a follow button? Because following changes data, so it must be a `POST`, and every `POST` in our app is CSRF protected. `EmptyForm` has no visible inputs, but it still carries a CSRF token we can validate. It's the smallest possible protected form.
 
+![A follow button changes data, so it goes through EmptyForm: no visible fields, just a CSRF token the server validates before saving the follow.](images/5.5-scene4-img1.png)
+
 Next, two small query helpers in the same file:
 
 {lang=python,line-numbers=on,starting-line-number=17}

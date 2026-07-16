@@ -725,7 +725,7 @@ from user.models import user_table
 
 Then add the decorator below `get_user_by_username`:
 
-{lang=python,line-numbers=on,starting-line-number=17}
+{lang=python,line-numbers=on,starting-line-number=18}
 ```
 def login_required(f: Callable) -> Callable:
     @wraps(f)
@@ -740,6 +740,8 @@ def login_required(f: Callable) -> Callable:
 A decorator is a function that wraps another function to add behavior around it. Ours wraps a view: before the view runs, it checks the session, and if nobody's logged in, it redirects to the login page instead of running the view.
 
 There's one detail that's easy to get wrong in an async app. The wrapper, `decorated_function`, is itself declared `async`, and it awaits the real view. If we wrote a plain function that returned a coroutine, Quart wouldn't recognize it as a coroutine function and wouldn't await it properly. So the wrapper must be async too.
+
+![A plain wrapper hands Quart a coroutine it never awaits, so the view never runs; an async wrapper awaits it properly.](images/5.5-scene2-img3.png)
 
 [Save the file](https://fmze.co/fftq-5.5.1).
 
@@ -799,7 +801,7 @@ We set up the blueprint and, right away, a form with no fields. Why a form for a
 
 Next, two small query helpers in the same file:
 
-{lang=python,line-numbers=on,starting-line-number=15}
+{lang=python,line-numbers=on,starting-line-number=17}
 ```
 async def is_following(conn, fm_user_id: int, to_user_id: int) -> bool:
     result = await conn.execute(
@@ -827,7 +829,7 @@ async def followers(conn, user_id: int) -> List[int]:
 
 Now the actions themselves, follow and unfollow:
 
-{lang=python,line-numbers=on,starting-line-number=33}
+{lang=python,line-numbers=on,starting-line-number=37}
 ```
 @relationship_app.route("/follow/<username>", methods=["POST"])
 @login_required
@@ -857,7 +859,7 @@ Then we insert the follow, but only if two things hold: you're not trying to fol
 
 Unfollow is the reverse, a `delete` instead of an `insert`:
 
-{lang=python,line-numbers=on,starting-line-number=54}
+{lang=python,line-numbers=on,starting-line-number=59}
 ```
 @relationship_app.route("/unfollow/<username>", methods=["POST"])
 @login_required
@@ -886,7 +888,7 @@ Same shape, same protection. We find the target user and delete the row where yo
 
 Now register the blueprint. Open `application.py`, import `relationship_app`, and register it alongside `user_app`:
 
-{lang=python,line-numbers=on,starting-line-number=8}
+{lang=python,line-numbers=on,starting-line-number=13}
 ```
     from user.views import user_app
     from relationship.views import relationship_app
@@ -917,7 +919,7 @@ $ docker compose run --rm web uv run alembic upgrade head
 
 The follow buttons live on a user's profile, and we don't have a profile page yet, so let's add a simple one. Open `user/views.py`. We'll need a few more imports here, plus our helpers and the relationship functions:
 
-{lang=python,line-numbers=on,starting-line-number=16}
+{lang=python,line-numbers=on,starting-line-number=17}
 ```
 from utils.helpers import get_user_by_username, login_required
 from relationship.models import relationship_table
@@ -926,7 +928,7 @@ from relationship.views import EmptyForm, is_following
 
 Then add the profile view:
 
-{lang=python,line-numbers=on,starting-line-number=70}
+{lang=python,line-numbers=on,starting-line-number=83}
 ```
 @user_app.route("/user/<username>")
 async def profile(username: str) -> str:

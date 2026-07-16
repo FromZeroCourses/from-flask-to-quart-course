@@ -831,6 +831,8 @@ async def followers(conn, user_id: int) -> List[int]:
 
 `followers` returns the ids of everyone following a given user. We don't need it on screen yet, but keep it in mind: when someone posts, this is the exact list of people whose feeds that post should land in. It's the seed of the whole feed system.
 
+![followers turns one new post into the exact list of feeds it has to land in, which is the seed of the whole feed system.](images/5.5-scene5-img2.png)
+
 Now the actions themselves, follow and unfollow:
 
 {lang=python,line-numbers=on,starting-line-number=37}

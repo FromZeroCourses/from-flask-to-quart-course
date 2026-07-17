@@ -743,7 +743,7 @@ A decorator is a function that wraps another function to add behavior around it.
 
 There's one detail that's easy to get wrong in an async app. The wrapper, `decorated_function`, is itself declared `async`, and it awaits the real view. If we wrote a plain function that returned a coroutine, Quart wouldn't recognize it as a coroutine function and wouldn't await it properly. So the wrapper must be async too.
 
-![A plain wrapper hands Quart a coroutine it never awaits, so the view never runs; an async wrapper awaits it properly.](images/5.5-scene2-img3.png)
+![A plain wrapper hands Quart a coroutine it never awaits, so the view never runs; an async wrapper awaits it properly.](images/5.5-scene2-img5.png)
 
 [Save the file](https://fmze.co/fftq-5.5.1).
 

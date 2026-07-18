@@ -829,8 +829,6 @@ async def followers(conn, user_id: int) -> List[int]:
 
 `is_following` answers a yes or no question: is there a row where this "from" user follows this "to" user? We use it to decide whether a profile shows a Follow or an Unfollow button.
 
-![is_following asks the database one question: a row exists, so the profile shows Unfollow; no row, and it shows Follow.](images/5.5-scene5-img1.png)
-
 `followers` returns the ids of everyone following a given user. We don't need it on screen yet, but keep it in mind: when someone posts, this is the exact list of people whose feeds that post should land in. It's the seed of the whole feed system.
 
 ![followers turns one new post into the exact list of feeds it has to land in, which is the seed of the whole feed system.](images/5.5-scene5-img2.png)

@@ -976,8 +976,6 @@ async def profile(username: str) -> str:
 
 We look up the user whose profile this is and 404 if they don't exist. Then we work out our relationship to them: is this my own profile, am I already following them, or not? That drives which button we show. We also count their followers with a quick query.
 
-![The view reduces the viewer's relationship to a profile down to one value, self, following, or not following, and that single value decides which button the template renders.](images/5.5-scene10-img1.png)
-
 The one new-looking thing is `follow_form`. We create an `EmptyForm` and hand it to the template purely so the follow and unfollow buttons have a CSRF token to submit. We'll reuse this pattern every time a page has an action button.
 
 ![An EmptyForm carries no fields at all, only a CSRF token, and that token is what lets the Follow and Unfollow buttons POST safely.](images/5.5-scene10-img2.png)

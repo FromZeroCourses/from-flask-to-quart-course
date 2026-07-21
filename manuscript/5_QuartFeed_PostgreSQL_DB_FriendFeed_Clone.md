@@ -925,8 +925,6 @@ $ docker compose run --rm web uv run alembic upgrade head
 
 The follow buttons live on a user's profile, and we don't have a profile page yet, so let's add a simple one. Open `user/views.py`. We'll need a few more imports here, plus our helpers and the relationship functions:
 
-Now for the profile route itself. We look up the user by their username, and if nobody matches, we abort with a 404. Then we work out the relationship to whoever is viewing: it's your own profile, someone you already follow, or someone you don't. We count their followers by selecting every relationship row that points at them, build an empty form for the follow button, and render it all in the profile template.
-
 {lang=python,line-numbers=on,starting-line-number=17}
 ```
 from utils.helpers import get_user_by_username, login_required

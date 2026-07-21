@@ -1001,14 +1001,20 @@ Finally the profile template. Create `templates/user/profile.html`:
         <p class="text-muted">{{ follower_count }} followers</p>
 
         {% if relationship == "following" %}
-        <form method="POST" action="{{ url_for('relationship_app.unfollow', username=profile_user.username) }}">
+        <form method="POST" action="{{
+            url_for('relationship_app.unfollow',
+                    username=profile_user.username) }}">
             {{ follow_form.csrf_token }}
-            <button type="submit" class="btn btn-outline-secondary">Unfollow</button>
+            <button type="submit"
+                class="btn btn-outline-secondary">Unfollow</button>
         </form>
         {% elif relationship == "not_following" %}
-        <form method="POST" action="{{ url_for('relationship_app.follow', username=profile_user.username) }}">
+        <form method="POST" action="{{
+            url_for('relationship_app.follow',
+                    username=profile_user.username) }}">
             {{ follow_form.csrf_token }}
-            <button type="submit" class="btn btn-primary">Follow</button>
+            <button type="submit"
+                class="btn btn-primary">Follow</button>
         </form>
         {% endif %}
 

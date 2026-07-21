@@ -914,7 +914,7 @@ from relationship.models import relationship_table  # noqa: F401
 
 [Save the file](https://fmze.co/fftq-5.5.5).
 
-Now run the migration for the new table:
+Now run the migration for the new table. Autogenerate compares our models against the database, sees that the relationship table is missing, and writes a new revision file for us. Then upgrade head applies that revision and creates the relationship table, with its two foreign keys pointing back to the user table:
 
 {lang=bash,line-numbers=off}
 ```

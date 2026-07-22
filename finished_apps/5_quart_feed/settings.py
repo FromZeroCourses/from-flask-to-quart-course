@@ -10,7 +10,6 @@ DATABASE_NAME = os.environ["DATABASE_NAME"]
 
 # Profile image uploads (Wand/ImageMagick)
 UPLOADS_FOLDER = os.environ.get("UPLOADS_FOLDER", "static/uploads")
-IMAGES_FOLDER = os.environ.get("IMAGES_FOLDER", "static/uploads")
 IMAGE_URL = os.environ.get("IMAGE_URL", "/static/uploads")
 
 # quart-wtf CSRF (disabled in tests via config_overrides)

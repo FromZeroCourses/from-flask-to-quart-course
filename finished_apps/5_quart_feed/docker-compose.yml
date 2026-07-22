@@ -21,7 +21,6 @@ services:
       DB_HOST: db
       DATABASE_NAME: app
       UPLOADS_FOLDER: /quartfeed_app/static/uploads
-      IMAGES_FOLDER: /quartfeed_app/static/uploads
       IMAGE_URL: /static/uploads
       WTF_CSRF_ENABLED: "1"
   db:

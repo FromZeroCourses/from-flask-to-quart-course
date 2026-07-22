@@ -1059,28 +1059,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 We update the package list, install ImageMagick and its development headers, then clean up the list to keep the image small. This is a common pattern: when a Python library wraps a system tool, you install the system tool in the Dockerfile.
 
-[Save the file](https://fmze.co/fftq-5.6.1) and declare the Python side with `uv add`:
+[Save the file](https://fmze.co/fftq-5.6.1).
+
+That covers the system library. Now the Python binding, which we add with `uv`:
 
 {lang=bash,line-numbers=off}
 ```
 $ uv add --no-sync Wand
 ```
 
-Uploaded files have to be saved somewhere, and served back from somewhere, so let's add a few settings for that. Open `.quartenv` and add the upload paths:
+The `--no-sync` flag records Wand in `pyproject.toml` and `uv.lock` without installing it on your machine, which is what we want since the app only ever runs in the container.
 
-{lang=python,line-numbers=on,starting-line-number=9}
+Uploaded files have to be saved somewhere, and served back from somewhere, so let's add a couple of settings for that. Open `.quartenv` and add the upload paths:
+
+{lang=ini,line-numbers=on,starting-line-number=9}
 ```
 UPLOADS_FOLDER=static/uploads
-IMAGES_FOLDER=static/uploads
 IMAGE_URL=/static/uploads
 ```
 
-[Save the file](https://fmze.co/fftq-5.6.2) and read them into `settings.py`:
+[Save the file](https://fmze.co/fftq-5.6.2), which also carries the `pyproject.toml` and `uv.lock` changes `uv add` just made. Now read the settings into `settings.py`:
 
 {lang=python,line-numbers=on,starting-line-number=10}
 ```
 UPLOADS_FOLDER = os.environ.get("UPLOADS_FOLDER", "static/uploads")
-IMAGES_FOLDER = os.environ.get("IMAGES_FOLDER", "static/uploads")
 IMAGE_URL = os.environ.get("IMAGE_URL", "/static/uploads")
 ```
 
@@ -1167,7 +1169,7 @@ $ docker compose run --rm web uv run alembic upgrade head
 
 Now let's build the URL helper that turns a user's image id into a path the browser can load. Open `utils/helpers.py` and add:
 
-{lang=python,line-numbers=on,starting-line-number=26}
+{lang=python,line-numbers=on,starting-line-number=28}
 ```
 async def get_user_by_id(conn: Any, user_id: int) -> Optional[Row]:
     result = await conn.execute(select(user_table).where(user_table.c.id == user_id))
@@ -1183,6 +1185,14 @@ def image_url(user_id: int, image: Optional[int], size: str = "lg") -> str:
 We add `get_user_by_id`, the companion to our username lookup, because editing a profile means loading the current user by their session id. Then `image_url` builds the avatar path: if the user has an image id, it points at their uploaded file at the requested size; if not, it returns a default picture. Add `current_app` to the imports at the top of the file for this to work.
 
 [Save the file](https://fmze.co/fftq-5.6.6). Drop a placeholder `default_profile.png` into the `static` folder so logged-out or avatar-less users still show something.
+
+One housekeeping detail while we're here. Uploaded avatars are runtime data, not source code, so they shouldn't end up in git. Add a `.gitignore` next to the app:
+
+{lang=text,line-numbers=on}
+```
+# User-uploaded images (runtime data), written by thumbnail_process
+static/uploads/
+```
 
 Editing a profile is a form with a file field, so we need a new form. Open `user/forms.py` and add it below `UserForm`:
 
@@ -1200,12 +1210,26 @@ This form has the username again, plus an `image` field. `FileField` is WTForms'
 
 [Save the file](https://fmze.co/fftq-5.6.7).
 
-Now the profile edit view. This one is longer, so let's build it in pieces. Open `user/views.py` and start with the setup, importing what we need:
+Now the profile edit view. This one is longer, so let's build it in pieces. Open `user/views.py`. The imports at the top of the file grow a fair bit, so here is the whole header with the new pieces in place:
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
 from pathlib import Path
+from typing import Optional, Union
 
+from passlib.hash import pbkdf2_sha256
+from quart import (
+    Blueprint,
+    Response,
+    abort,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from sqlalchemy import insert, select, update
 
 from utils.helpers import (
@@ -1215,12 +1239,17 @@ from utils.helpers import (
     login_required,
 )
 from utils.imaging import thumbnail_process
+from relationship.models import relationship_table
+from relationship.views import EmptyForm, is_following
 from user.forms import ProfileEditForm, UserForm
+from user.models import user_table
 ```
 
-We bring in `update` for changing the user row, our new helpers, and the `thumbnail_process` function. Now a tiny helper to keep the avatars in their own subfolder, and one to run the image processing:
+Four things are new. `Path` for building the upload folder, `request` so we can tell a `GET` from a `POST`, `update` for changing the user row, and our new helpers `get_user_by_id`, `image_url`, and `thumbnail_process`, plus the `ProfileEditForm` we just wrote.
 
-{lang=python,line-numbers=on,starting-line-number=110}
+Now a tiny helper to keep the avatars in their own subfolder, and one to run the image processing:
+
+{lang=python,line-numbers=on,starting-line-number=127}
 ```
 def _avatars_dir() -> Path:
     return Path(current_app.config["UPLOADS_FOLDER"]) / "avatars"
@@ -1233,13 +1262,12 @@ def _save_avatar(file_storage, user_id: int) -> int:
 
 `_avatars_dir` points at `static/uploads/avatars`, and `_save_avatar` reads the uploaded file's bytes and hands them to `thumbnail_process`, returning the new image id. Now the edit view itself:
 
-{lang=python,line-numbers=on,starting-line-number=119}
+{lang=python,line-numbers=on,starting-line-number=136}
 ```
 @user_app.route("/profile/edit", methods=["GET", "POST"])
 @login_required
 async def profile_edit() -> Union[str, Response]:
     form = await ProfileEditForm.create_form()
-    error: Optional[str] = None
     engine = current_app.dbc  # type: ignore
 
     async with engine.begin() as conn:
@@ -1272,15 +1300,12 @@ async def profile_edit() -> Union[str, Response]:
         "user/profile_edit.html",
         form=form,
         avatar_url=image_url(current_user.id, current_user.image, "xlg"),
-        error=error,
     )
 ```
 
 The view is `login_required`, since you can only edit your own profile. We load the current user by their session id. On a `GET`, we pre-fill the username field so the form shows the existing name.
 
 On a valid `POST`, we only process an image if one was actually uploaded, checking `form.image.data`. If there is one, `_save_avatar` crops and saves it and gives us a new timestamp. Then we build the update: always the username, and the new image id only if a file came in. We update the row, refresh the session username in case it changed, and redirect back to the profile.
-
-Add `request` to the Quart imports for the `GET` check. Remember to import `Response` too if you removed it earlier.
 
 [Save the file](https://fmze.co/fftq-5.6.8).
 
@@ -1322,7 +1347,51 @@ We show the current avatar at the top, then the form. The one detail that matter
 
 [Save the file](https://fmze.co/fftq-5.6.9).
 
-Two small touches to finish. Add an avatar to the profile page by loading `image_url` in the profile view and showing it in `profile.html`, and add an Edit profile link to the navbar for the logged-in user. With those in place, restart the app, edit your profile, and upload a photo. It gets cropped to a neat circle avatar and shows up on your profile. Now that people can post as themselves, let's give them something to post.
+The avatar is saved, but the profile page still doesn't show it. Back in `user/views.py`, the `profile` view needs to pass the avatar down to its template:
+
+{lang=python,line-numbers=on,starting-line-number=118}
+```
+    return await render_template(
+        "user/profile.html",
+        profile_user=profile_user,
+        relationship=relationship,
+        follower_count=follower_count,
+        avatar_url=image_url(profile_user.id, profile_user.image),
+        follow_form=follow_form,
+    )
+```
+
+We call the same `image_url` helper, this time with the profile owner's id and image. No size argument, so it hands back the `lg` version, which is the 75 pixel one.
+
+Now show it. Open `templates/user/profile.html` and put the avatar next to the username:
+
+{lang=html,line-numbers=on,starting-line-number=12}
+```
+        <div class="d-flex align-items-center mb-3">
+            <img src="{{ avatar_url }}" class="rounded-circle me-3"
+                width="64" height="64" alt="avatar">
+            <div>
+                <h3 class="mb-0">@{{ profile_user.username }}</h3>
+                <p class="text-muted mb-0">{{ follower_count }} followers</p>
+            </div>
+        </div>
+```
+
+A flex row puts the picture and the name side by side, and `rounded-circle` is the Bootstrap class that crops it to a circle in the browser. Our square avatar is what makes that look right.
+
+Last touch: nobody can reach the edit page yet. Open `templates/navbar.html` and add the link for logged-in users:
+
+{lang=html,line-numbers=on,starting-line-number=6}
+```
+            <a class="nav-link"
+                href="{{ url_for('user_app.profile_edit') }}">Edit profile</a>
+```
+
+It goes inside the `{% if session.username %}` branch, right above Logout, so it only shows when someone is actually logged in.
+
+[Save the file](https://fmze.co/fftq-5.6.10).
+
+Restart the app and try it. Register, log in, hit Edit profile, and upload a photo. It comes back cropped to a neat circle next to your username, and anyone who hasn't uploaded one still gets the default picture. Our users have faces now. Next we give them something to say.
 
 ## Posting: Messages, Images, and Permalinks <!-- 5.7 -->
 

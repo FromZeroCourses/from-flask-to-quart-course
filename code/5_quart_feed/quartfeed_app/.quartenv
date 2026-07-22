@@ -6,3 +6,5 @@ DB_PASSWORD=app_password
 DB_HOST=db
 DATABASE_NAME=app
 WTF_CSRF_ENABLED=1
+UPLOADS_FOLDER=static/uploads
+IMAGE_URL=/static/uploads

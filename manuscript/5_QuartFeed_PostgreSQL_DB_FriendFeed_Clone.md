@@ -1146,6 +1146,8 @@ This takes the raw uploaded bytes, the folder to write to, and the user's id. It
 
 Why put a timestamp in the filename? Because it doubles as a cache buster. When someone uploads a new avatar, they get a new timestamp and therefore new filenames, so browsers can't show a stale cached image. The function returns that `image_id`, and we'll store it on the user row. A user with no avatar has no image id, and we'll show a default picture instead.
 
+![A new upload gets a new timestamp in its filename, so the browser cannot serve the stale cached avatar.](images/5.6-scene7-img2.png)
+
 [Save the file](https://fmze.co/fftq-5.6.4).
 
 For that to work, the `user` table needs a column to remember the avatar's image id. Open `user/models.py` and add an `image` column:

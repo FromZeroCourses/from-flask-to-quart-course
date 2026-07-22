@@ -1403,6 +1403,8 @@ It goes inside the `{% if session.username %}` branch, right above Logout, so it
 
 Restart the app and try it. Register, log in, hit Edit profile, and upload a photo. It comes back cropped to a neat circle next to your username, and anyone who hasn't uploaded one still gets the default picture. Our users have faces now. Next we give them something to say.
 
+![Every user now carries a cropped, circular avatar next to their username; the next thing they need is something to post.](images/5.6-scene17-img1.png)
+
 ## Posting: Messages, Images, and Permalinks <!-- 5.7 -->
 
 It's time for the content itself. In this lesson we'll build posts: a message, an optional image, and a permanent, shareable address for each one. That address, the permalink, is worth getting right, so we'll design it carefully.

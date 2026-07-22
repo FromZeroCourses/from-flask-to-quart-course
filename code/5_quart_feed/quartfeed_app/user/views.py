@@ -120,6 +120,7 @@ async def profile(username: str) -> str:
         profile_user=profile_user,
         relationship=relationship,
         follower_count=follower_count,
+        avatar_url=image_url(profile_user.id, profile_user.image),
         follow_form=follow_form,
     )
 

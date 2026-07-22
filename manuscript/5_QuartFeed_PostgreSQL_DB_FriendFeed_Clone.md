@@ -1220,6 +1220,8 @@ This form has the username again, plus an `image` field. `FileField` is WTForms'
 
 Now the profile edit view. This one is longer, so let's build it in pieces. Open `user/views.py`. The imports at the top of the file grow a fair bit, so here is the whole header with the new pieces in place:
 
+![The profile edit view lands in three pieces: the new imports, two small avatar helpers, and the view itself.](images/5.6-scene12-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
 from pathlib import Path

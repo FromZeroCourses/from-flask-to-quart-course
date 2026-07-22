@@ -1070,13 +1070,15 @@ $ uv add --no-sync Wand
 
 The `--no-sync` flag records Wand in `pyproject.toml` and `uv.lock` without installing it on your machine, which is what we want since the app only ever runs in the container.
 
-Uploaded files have to be saved somewhere, and served back from somewhere, so let's add a couple of settings for that. Open `.quartenv` and add the upload paths:
+Two settings, and notice they're plain values, not code. `UPLOADS_FOLDER` is a folder path, `IMAGE_URL` is a web path, and both live in `.quartenv` rather than in the app because a different machine could keep its uploads somewhere else entirely.
 
 {lang=ini,line-numbers=on,starting-line-number=9}
 ```
 UPLOADS_FOLDER=static/uploads
 IMAGE_URL=/static/uploads
 ```
+
+[Save the file](https://fmze.co/fftq-5.6.2). Now let's read those two settings into `settings.py`:
 
 [Save the file](https://fmze.co/fftq-5.6.2), which also carries the `pyproject.toml` and `uv.lock` changes `uv add` just made. Now read the settings into `settings.py`:
 

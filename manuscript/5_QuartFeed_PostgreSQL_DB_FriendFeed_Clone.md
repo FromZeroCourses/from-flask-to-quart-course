@@ -1175,6 +1175,8 @@ $ docker compose run --rm web uv run alembic upgrade head
 
 Now let's build the URL helper that turns a user's image id into a path the browser can load. Open `utils/helpers.py` and add:
 
+![An image id becomes an avatar path: the user id, image id, and size compose the filename, and a user with no image falls back to the default picture.](images/5.6-scene9-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=28}
 ```
 async def get_user_by_id(conn: Any, user_id: int) -> Optional[Row]:

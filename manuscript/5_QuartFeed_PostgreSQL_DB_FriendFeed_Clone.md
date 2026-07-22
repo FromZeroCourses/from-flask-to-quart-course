@@ -925,8 +925,6 @@ $ docker compose run --rm web uv run alembic upgrade head
 
 The follow buttons live on a user's profile, and we don't have a profile page yet, so let's add a simple one. Open `user/views.py`. We'll need a few more imports here, plus our helpers and the relationship functions:
 
-Now for the profile route itself. We look up the user by their username, and if nobody matches, we abort with a 404. Then we work out the relationship to whoever is viewing: it's your own profile, someone you already follow, or someone you don't. We count their followers by selecting every relationship row that points at them, build an empty form for the follow button, and render it all in the profile template.
-
 {lang=python,line-numbers=on,starting-line-number=17}
 ```
 from utils.helpers import get_user_by_username, login_required
@@ -1001,14 +999,20 @@ Finally the profile template. Create `templates/user/profile.html`:
         <p class="text-muted">{{ follower_count }} followers</p>
 
         {% if relationship == "following" %}
-        <form method="POST" action="{{ url_for('relationship_app.unfollow', username=profile_user.username) }}">
+        <form method="POST" action="{{
+            url_for('relationship_app.unfollow',
+                    username=profile_user.username) }}">
             {{ follow_form.csrf_token }}
-            <button type="submit" class="btn btn-outline-secondary">Unfollow</button>
+            <button type="submit"
+                class="btn btn-outline-secondary">Unfollow</button>
         </form>
         {% elif relationship == "not_following" %}
-        <form method="POST" action="{{ url_for('relationship_app.follow', username=profile_user.username) }}">
+        <form method="POST" action="{{
+            url_for('relationship_app.follow',
+                    username=profile_user.username) }}">
             {{ follow_form.csrf_token }}
-            <button type="submit" class="btn btn-primary">Follow</button>
+            <button type="submit"
+                class="btn btn-primary">Follow</button>
         </form>
         {% endif %}
 
@@ -1022,7 +1026,17 @@ We show the username and follower count, then choose a button based on the relat
 
 [Save the file](https://fmze.co/fftq-5.5.7).
 
-Time to try it. Bring the app up and head to the registration page. Register a first account, jorge, then a second one, maria, so we have two users to connect. Now log in as jorge and visit maria's profile at `/user/maria`. There's the Follow button our new route is wired to. Click it, and the page comes back with the button flipped to Unfollow and the follower count at one. You've just built a social graph. Next we'll make profiles worth visiting by adding avatars.
+Time to try it. Bring the app up and head to the registration page.
+
+Register a first account, jorge, then a second one, maria, so we have two users to connect.
+
+Now log in as jorge.
+
+Then visit maria's profile at `/user/maria`.
+
+There's the Follow button our new route is wired to. Click it, and the page comes back with the button flipped to Unfollow and the follower count at one.
+
+You've just built a social graph. Next we'll make profiles worth visiting by adding avatars.
 
 ## Profiles and Avatar Uploads <!-- 5.6 -->
 

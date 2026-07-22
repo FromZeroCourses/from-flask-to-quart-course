@@ -1059,8 +1059,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 We update the package list, install ImageMagick and its development headers, then clean up the list to keep the image small. This is a common pattern: when a Python library wraps a system tool, you install the system tool in the Dockerfile.
 
-![A Python wrapper library calls down into a system tool, so the system tool has to be installed in the Docker image first.](images/5.6-scene3-img1.png)
-
 [Save the file](https://fmze.co/fftq-5.6.1).
 
 That covers the system library. Now the Python binding, which we add with `uv`:

@@ -1036,6 +1036,8 @@ Then visit maria's profile at `/user/maria`.
 
 There's the Follow button our new route is wired to. Click it, and the page comes back with the button flipped to Unfollow and the follower count at one.
 
+![Following maria writes a single row in the relationship table: one edge in the social graph is one follower and followed pair.](images/5.5-scene14-img1.png)
+
 You've just built a social graph. Next we'll make profiles worth visiting by adding avatars.
 
 ## Profiles and Avatar Uploads <!-- 5.6 -->

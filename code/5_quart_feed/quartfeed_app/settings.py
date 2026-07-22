@@ -7,4 +7,6 @@ DB_USERNAME = os.environ["DB_USERNAME"]
 DB_PASSWORD = os.environ["DB_PASSWORD"]
 DB_HOST = os.environ["DB_HOST"]
 DATABASE_NAME = os.environ["DATABASE_NAME"]
+UPLOADS_FOLDER = os.environ.get("UPLOADS_FOLDER", "static/uploads")
+IMAGE_URL = os.environ.get("IMAGE_URL", "/static/uploads")
 WTF_CSRF_ENABLED = os.environ.get("WTF_CSRF_ENABLED", "1") == "1"

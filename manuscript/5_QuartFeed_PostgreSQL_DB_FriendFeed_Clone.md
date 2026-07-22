@@ -1094,6 +1094,8 @@ IMAGE_URL = os.environ.get("IMAGE_URL", "/static/uploads")
 
 An avatar is square, so when someone uploads a rectangular photo we need to crop it to a square and produce a few sizes: a small one for the feed, a larger one for the profile. Let's write that image logic in its own file. Create `utils/imaging.py`:
 
+![An uploaded photo is center cropped to a square, then saved at three avatar sizes: 200, 75 and 50 pixels.](images/5.6-scene7-img1.png)
+
 {lang=python,line-numbers=on}
 ```
 import time

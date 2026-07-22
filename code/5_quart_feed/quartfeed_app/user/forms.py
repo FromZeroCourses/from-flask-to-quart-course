@@ -1,7 +1,6 @@
+from quart_wtf import FileAllowed, FileField, QuartForm
 from wtforms import PasswordField, StringField
 from wtforms.validators import DataRequired, Length
-
-from quart_wtf import QuartForm
 
 
 class UserForm(QuartForm):
@@ -13,3 +12,11 @@ class UserForm(QuartForm):
         render_kw={"autocomplete": "off"},
     )
     password = PasswordField("Password", validators=[DataRequired()])
+
+
+class ProfileEditForm(QuartForm):
+    username = StringField("Username", validators=[DataRequired(), Length(max=15)])
+    image = FileField(
+        "Profile image",
+        validators=[FileAllowed(["png", "jpg", "jpeg"], "Images only!")],
+    )

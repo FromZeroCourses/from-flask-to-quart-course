@@ -8,4 +8,6 @@ user_table = Table(
     Column("id", Integer, primary_key=True),
     Column("username", String(15), index=True, unique=True),
     Column("password", String(128)),
+    # unix timestamp of the last uploaded avatar; NULL = default avatar
+    Column("image", Integer, nullable=True),
 )

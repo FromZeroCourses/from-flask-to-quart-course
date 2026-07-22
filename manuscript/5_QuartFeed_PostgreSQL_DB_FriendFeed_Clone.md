@@ -1026,7 +1026,17 @@ We show the username and follower count, then choose a button based on the relat
 
 [Save the file](https://fmze.co/fftq-5.5.7).
 
-Time to try it. Bring the app up and head to the registration page. Register a first account, jorge, then a second one, maria, so we have two users to connect. Now log in as jorge and visit maria's profile at `/user/maria`. There's the Follow button our new route is wired to. Click it, and the page comes back with the button flipped to Unfollow and the follower count at one. You've just built a social graph. Next we'll make profiles worth visiting by adding avatars.
+Time to try it. Bring the app up and head to the registration page.
+
+Register a first account, jorge, then a second one, maria, so we have two users to connect.
+
+Now log in as jorge.
+
+Then visit maria's profile at `/user/maria`.
+
+There's the Follow button our new route is wired to. Click it, and the page comes back with the button flipped to Unfollow and the follower count at one.
+
+You've just built a social graph. Next we'll make profiles worth visiting by adding avatars.
 
 ## Profiles and Avatar Uploads <!-- 5.6 -->
 

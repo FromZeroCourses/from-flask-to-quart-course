@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional, Union
 
 from passlib.hash import pbkdf2_sha256
@@ -9,15 +10,22 @@ from quart import (
     flash,
     redirect,
     render_template,
+    request,
     session,
     url_for,
 )
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 
-from utils.helpers import get_user_by_username, login_required
+from utils.helpers import (
+    get_user_by_id,
+    get_user_by_username,
+    image_url,
+    login_required,
+)
+from utils.imaging import thumbnail_process
 from relationship.models import relationship_table
 from relationship.views import EmptyForm, is_following
-from user.forms import UserForm
+from user.forms import ProfileEditForm, UserForm
 from user.models import user_table
 
 user_app = Blueprint("user_app", __name__)
@@ -113,4 +121,52 @@ async def profile(username: str) -> str:
         relationship=relationship,
         follower_count=follower_count,
         follow_form=follow_form,
+    )
+
+
+def _avatars_dir() -> Path:
+    return Path(current_app.config["UPLOADS_FOLDER"]) / "avatars"
+
+
+def _save_avatar(file_storage, user_id: int) -> int:
+    data = file_storage.read()
+    return thumbnail_process(data, _avatars_dir(), user_id)
+
+
+@user_app.route("/profile/edit", methods=["GET", "POST"])
+@login_required
+async def profile_edit() -> Union[str, Response]:
+    form = await ProfileEditForm.create_form()
+    engine = current_app.dbc  # type: ignore
+
+    async with engine.begin() as conn:
+        current_user = await get_user_by_id(conn, session["user_id"])
+
+    if request.method == "GET":
+        form.username.data = current_user.username
+
+    if await form.validate_on_submit():
+        new_username = form.username.data
+        ts: Optional[int] = None
+        if form.image.data:
+            ts = _save_avatar(form.image.data, session["user_id"])
+
+        async with engine.begin() as conn:
+            values = {"username": new_username}
+            if ts is not None:
+                values["image"] = ts
+            await conn.execute(
+                update(user_table)
+                .where(user_table.c.id == session["user_id"])
+                .values(**values)
+            )
+
+        session["username"] = new_username
+        await flash("Profile updated")
+        return redirect(url_for(".profile", username=new_username))
+
+    return await render_template(
+        "user/profile_edit.html",
+        form=form,
+        avatar_url=image_url(current_user.id, current_user.image, "xlg"),
     )

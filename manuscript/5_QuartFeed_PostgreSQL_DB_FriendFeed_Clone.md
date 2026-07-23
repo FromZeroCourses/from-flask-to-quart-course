@@ -1599,7 +1599,7 @@ async def test_logout(create_test_client):
     response = await create_test_client.get("/logout")
     assert response.status_code == 302
 
-    # No longer logged in, so home redirects back to login.
+    # No longer logged in -> home redirects to login.
     home_response = await create_test_client.get("/")
     assert home_response.status_code == 302
 ```
@@ -1653,9 +1653,14 @@ async def test_profile_edit_username(create_test_client, create_test_app):
     async with create_test_client.session_transaction() as session:
         assert session["username"] == "frankie"
 
+    # Still logged in as the renamed user afterward.
+    profile_response = await create_test_client.get("/profile/edit")
+    profile_body = await profile_response.get_data()
+    assert "frankie" in str(profile_body)
+
 
 @pytest.mark.asyncio
-async def test_profile_edit_duplicate_username(create_test_client):
+async def test_profile_edit_duplicate_username(create_test_client, create_test_app):
     await create_test_client.post(
         "/register", form={"username": "gina", "password": "secret123"}
     )
@@ -1671,6 +1676,15 @@ async def test_profile_edit_duplicate_username(create_test_client):
     )
     body = await response.get_data()
     assert "Username already exists" in str(body)
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "harry")
+                )
+            ).fetchone()
+            assert row is not None
 
 
 @pytest.mark.asyncio
@@ -1809,7 +1823,7 @@ async def test_delete_image(create_test_app):
     client = create_test_app.test_client()
     await _register_and_login(client, "dave")
 
-    # Give dave a custom avatar (a non-null image timestamp) directly in the DB.
+    # Give dave a custom avatar (non-null image timestamp) directly in the DB.
     async with create_test_app.app_context():
         async with current_app.dbc.begin() as conn:
             await conn.execute(
@@ -3002,6 +3016,25 @@ async def test_comment_bubbles_post_to_commenters_followers(create_test_app):
 
 
 @pytest.mark.asyncio
+async def test_comment_does_not_bubble_to_unrelated_user(create_test_app):
+    """Someone who follows neither the author nor the commenter gets nothing."""
+    app = create_test_app
+    author = app.test_client()
+    await _register_and_login(author, "author")
+    commenter = app.test_client()
+    await _register_and_login(commenter, "commenter")
+    stranger = app.test_client()
+    await _register_and_login(stranger, "stranger")
+
+    await author.post("/post", form={"message": "hello"})
+    post_id = await _only_post_id(app)
+    await commenter.post(f"/comment/{post_id}", form={"comment": "hi"})
+
+    stranger_id = await _user_id(app, "stranger")
+    assert await _feed_rows(app, stranger_id) == []
+
+
+@pytest.mark.asyncio
 async def test_bubble_dedups_against_direct_follow(create_test_app):
     """Following the author AND the commenter yields ONE feed row (direct wins)."""
     app = create_test_app
@@ -3028,7 +3061,7 @@ async def test_bubble_dedups_against_direct_follow(create_test_app):
     assert rows[0].reason_user_id is None  # direct-follow row keeps its NULL reason
 ```
 
-The first test tells the whole bubbling story. The viewer follows the commenter but not the author, so when the author posts, the viewer's feed is empty, and we assert exactly that. Then the commenter comments, and now the post appears in the viewer's feed with a `reason_type` of "comment" and a `reason_user_id` pointing at the commenter. We even run it through `_load_feed` to confirm the attribution resolves to the friendly "commenter commented on this" form the template will show. The second test guards a nasty edge: if you already follow the author directly, a later comment must not create a second copy of the post in your feed. We assert the row count stays at one and that the original direct-follow row keeps its empty reason, so a real follow always wins over a bubble.
+The first test tells the whole bubbling story. The viewer follows the commenter but not the author, so when the author posts, the viewer's feed is empty, and we assert exactly that. Then the commenter comments, and now the post appears in the viewer's feed with a `reason_type` of "comment" and a `reason_user_id` pointing at the commenter. We even run it through `_load_feed` to confirm the attribution resolves to the friendly "commenter commented on this" form the template will show. The second test proves the flip side: a stranger who follows neither the author nor the commenter gets nothing, so a comment only bubbles to the commenter's own followers. And the third test guards a nasty edge: if you already follow the author directly, a later comment must not create a second copy of the post in your feed. We assert the row count stays at one and that the original direct-follow row keeps its empty reason, so a real follow always wins over a bubble.
 
 [Save the file](https://fmze.co/fftq-5.12.7).
 

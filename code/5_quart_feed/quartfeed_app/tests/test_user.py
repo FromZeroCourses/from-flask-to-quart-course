@@ -49,3 +49,56 @@ async def test_register_missing_fields(create_test_client):
     )
     body = await response.get_data()
     assert "This field is required." in str(body)
+
+
+@pytest.mark.asyncio
+async def test_login_success(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "carol", "password": "secret123"}
+    )
+    response = await create_test_client.post(
+        "/login", form={"username": "carol", "password": "secret123"}
+    )
+    assert response.status_code == 302
+
+    home_response = await create_test_client.get("/")
+    body = await home_response.get_data()
+    assert "QuartFeed" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_login_unknown_user(create_test_client):
+    response = await create_test_client.post(
+        "/login", form={"username": "nobody", "password": "whatever"}
+    )
+    body = await response.get_data()
+    assert "Invalid username or password" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_login_wrong_password(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "dave", "password": "secret123"}
+    )
+    response = await create_test_client.post(
+        "/login", form={"username": "dave", "password": "wrongpassword"}
+    )
+    body = await response.get_data()
+    assert "Invalid username or password" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_logout(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "erin", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/login", form={"username": "erin", "password": "secret123"}
+    )
+
+    response = await create_test_client.get("/logout")
+    assert response.status_code == 302
+
+    # No longer logged in -> home redirects to login.
+    home_response = await create_test_client.get("/")
+    assert home_response.status_code == 302

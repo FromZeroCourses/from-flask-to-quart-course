@@ -10,10 +10,13 @@ load_dotenv(".quartenv")
 from application import create_app
 from db import metadata
 
+# Register the tables we're testing so metadata.create_all builds them.
+from user.models import user_table  # noqa: F401
+from relationship.models import relationship_table  # noqa: F401
+
 
 @pytest_asyncio.fixture
 async def create_db():
-    print("Creating db")
     db_name = os.environ["DATABASE_NAME"]
     db_host = os.environ["DB_HOST"]
     db_username = os.environ["DB_USERNAME"]
@@ -22,14 +25,13 @@ async def create_db():
     base_uri = f"postgresql+asyncpg://{db_username}:{db_password}@{db_host}:5432/"
     test_db_name = db_name + "_test"
 
-    # CREATE/DROP DATABASE must run outside a transaction (AUTOCOMMIT)
+    # CREATE/DROP DATABASE must run outside a transaction (AUTOCOMMIT).
     admin = create_async_engine(base_uri + db_name, isolation_level="AUTOCOMMIT")
     async with admin.connect() as conn:
         await conn.execute(text(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE)"))
         await conn.execute(text(f"CREATE DATABASE {test_db_name}"))
     await admin.dispose()
 
-    print("Creating test tables")
     engine = create_async_engine(base_uri + test_db_name)
     async with engine.begin() as conn:
         await conn.run_sync(metadata.create_all)
@@ -41,9 +43,9 @@ async def create_db():
         "DB_HOST": db_host,
         "DATABASE_NAME": test_db_name,
         "TESTING": True,
+        "WTF_CSRF_ENABLED": False,
     }
 
-    print("Destroying db")
     admin = create_async_engine(base_uri + db_name, isolation_level="AUTOCOMMIT")
     async with admin.connect() as conn:
         await conn.execute(text(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE)"))
@@ -60,5 +62,4 @@ async def create_test_app(create_db):
 
 @pytest_asyncio.fixture
 async def create_test_client(create_test_app):
-    print("Creating test client")
     return create_test_app.test_client()

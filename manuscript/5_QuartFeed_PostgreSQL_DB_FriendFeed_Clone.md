@@ -1407,7 +1407,444 @@ Restart the app and try it. Register, log in, hit Edit profile, and upload a pho
 
 ![Every user now carries a cropped, circular avatar next to their username; the next thing they need is something to post.](images/5.6-scene17-img1.png)
 
-## Posting: Messages, Images, and Permalinks <!-- 5.7 -->
+## User Tests <!-- 5.7 -->
+
+We've built registration, login, sessions, following, and profiles, and every one of those pieces can break quietly as we keep adding features. Before we move on to posting and the feed, let's pin this behavior down with tests. We tested the counter app back in chapter four, so the shape will feel familiar; what's new is that user features bring three things we couldn't test before: forms protected by a CSRF token, logged-in sessions that have to survive from one request to the next, and behavior that changes depending on which user is asking.
+
+We'll start with the test harness. Every test needs a fresh, empty database so one test can't leak state into another, and it needs an app that doesn't fight us over CSRF tokens. Create a `tests` folder with a `conftest.py`, reusing the fresh-database pattern from the counter app. The one thing to get right is the imports at the top: `metadata.create_all` only builds the tables it knows about, so we import every model first to register it, even the ones we haven't tested yet.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import os
+
+import pytest_asyncio
+from dotenv import load_dotenv
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+load_dotenv(".quartenv")
+
+from application import create_app
+from db import metadata
+
+# Make sure every table is registered on `metadata` before create_all runs.
+from user.models import user_table  # noqa: F401
+from relationship.models import relationship_table  # noqa: F401
+from post.models import post_table, feed_table  # noqa: F401
+from comment.models import comment_table  # noqa: F401
+from like.models import like_table  # noqa: F401
+
+
+@pytest_asyncio.fixture
+async def create_db():
+    db_name = os.environ["DATABASE_NAME"]
+    db_host = os.environ["DB_HOST"]
+    db_username = os.environ["DB_USERNAME"]
+    db_password = os.environ["DB_PASSWORD"]
+
+    base_uri = f"postgresql+asyncpg://{db_username}:{db_password}@{db_host}:5432/"
+    test_db_name = db_name + "_test"
+
+    # CREATE/DROP DATABASE must run outside a transaction (AUTOCOMMIT).
+    admin = create_async_engine(base_uri + db_name, isolation_level="AUTOCOMMIT")
+    async with admin.connect() as conn:
+        await conn.execute(text(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE)"))
+        await conn.execute(text(f"CREATE DATABASE {test_db_name}"))
+    await admin.dispose()
+
+    engine = create_async_engine(base_uri + test_db_name)
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+    await engine.dispose()
+
+    yield {
+        "DB_USERNAME": db_username,
+        "DB_PASSWORD": db_password,
+        "DB_HOST": db_host,
+        "DATABASE_NAME": test_db_name,
+        "TESTING": True,
+        "WTF_CSRF_ENABLED": False,
+    }
+
+    admin = create_async_engine(base_uri + db_name, isolation_level="AUTOCOMMIT")
+    async with admin.connect() as conn:
+        await conn.execute(text(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE)"))
+    await admin.dispose()
+
+
+@pytest_asyncio.fixture
+async def create_test_app(create_db):
+    app = create_app(**create_db)
+    await app.startup()
+    yield app
+    await app.shutdown()
+
+
+@pytest_asyncio.fixture
+async def create_test_client(create_test_app):
+    return create_test_app.test_client()
+```
+
+Three fixtures build on each other. `create_db` drops and recreates a `_test` database, builds every table, and hands back a config dictionary; notice the last two keys, `TESTING` and `WTF_CSRF_ENABLED` set to `False`. Because our `create_app` already accepts config overrides, turning CSRF off for tests is as simple as passing that flag. `create_test_app` feeds that config into `create_app` and runs the app's startup and shutdown. `create_test_client` gives us a Quart test client, which is the object we'll actually poke at routes with. The client keeps cookies between requests, and that detail is the whole reason we can test logged-in behavior at all.
+
+[Save the file](https://fmze.co/fftq-5.7.1).
+
+Now the user tests themselves. Create `tests/test_user.py` and start with registration. We check three things: that the page loads, that a successful signup actually writes a user to the database with a hashed password, and that the form rejects bad input.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import pytest
+from quart import current_app
+from sqlalchemy import select
+
+from user.models import user_table
+
+
+@pytest.mark.asyncio
+async def test_register_page_loads(create_test_client):
+    response = await create_test_client.get("/register")
+    body = await response.get_data()
+    assert "Registration" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_register_creates_user(create_test_client, create_test_app):
+    response = await create_test_client.post(
+        "/register", form={"username": "alice", "password": "secret123"}
+    )
+    assert response.status_code == 302
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "alice")
+                )
+            ).fetchone()
+            assert row is not None
+            assert row.password != "secret123"  # stored hashed, not plaintext
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_username(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "bob", "password": "secret123"}
+    )
+    response = await create_test_client.post(
+        "/register", form={"username": "bob", "password": "secret123"}
+    )
+    body = await response.get_data()
+    assert "User already exists" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_register_missing_fields(create_test_client):
+    response = await create_test_client.post(
+        "/register", form={"username": "", "password": ""}
+    )
+    body = await response.get_data()
+    assert "This field is required." in str(body)
+```
+
+A successful registration answers with a `302` redirect, so that status code is our signal that it worked. But a redirect alone doesn't prove much, so `test_register_creates_user` opens the database directly and confirms alice's row exists, and that her stored password is not the plaintext we sent. That one assertion quietly guarantees we're hashing passwords. The last two tests push on the unhappy paths: registering the same username twice surfaces "User already exists", and an empty form comes back with the form's own "This field is required." message, which tells us validation is running before we ever touch the database.
+
+[Save the file](https://fmze.co/fftq-5.7.2).
+
+Next, add the login and logout tests to the same file. This is where the test client's cookie jar earns its keep: we register, then log in, and the session cookie set at login rides along into the next request automatically.
+
+{lang=python,line-numbers=on,starting-line-number=54}
+```
+@pytest.mark.asyncio
+async def test_login_success(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "carol", "password": "secret123"}
+    )
+    response = await create_test_client.post(
+        "/login", form={"username": "carol", "password": "secret123"}
+    )
+    assert response.status_code == 302
+
+    home_response = await create_test_client.get("/")
+    body = await home_response.get_data()
+    assert "QuartFeed" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_login_unknown_user(create_test_client):
+    response = await create_test_client.post(
+        "/login", form={"username": "nobody", "password": "whatever"}
+    )
+    body = await response.get_data()
+    assert "Invalid username or password" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_login_wrong_password(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "dave", "password": "secret123"}
+    )
+    response = await create_test_client.post(
+        "/login", form={"username": "dave", "password": "wrongpassword"}
+    )
+    body = await response.get_data()
+    assert "Invalid username or password" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_logout(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "erin", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/login", form={"username": "erin", "password": "secret123"}
+    )
+
+    response = await create_test_client.get("/logout")
+    assert response.status_code == 302
+
+    # No longer logged in, so home redirects back to login.
+    home_response = await create_test_client.get("/")
+    assert home_response.status_code == 302
+```
+
+After carol logs in, we simply request the home page and check that we land on the real feed, the page that says "QuartFeed", instead of being bounced to login. That proves the session stuck. The two failure tests confirm that a wrong username and a wrong password both come back with the same "Invalid username or password" message, which is deliberate: we never tell an attacker which half they got right. And `test_logout` runs the round trip in reverse. Once erin logs out, asking for the home page redirects her away, which is exactly what we want for a page that requires a login.
+
+[Save the file](https://fmze.co/fftq-5.7.3).
+
+The last piece of the single-user story is editing a profile. Add these tests, still in `test_user.py`. Renaming yourself is trickier than it looks, because the username lives in the session too, so we check both the database and the session.
+
+{lang=python,line-numbers=on,starting-line-number=107}
+```
+@pytest.mark.asyncio
+async def test_profile_edit_requires_login(create_test_client):
+    response = await create_test_client.get("/profile/edit")
+    assert response.status_code == 302
+    assert "/login" in response.headers.get("Location", "")
+
+
+@pytest.mark.asyncio
+async def test_profile_edit_username(create_test_client, create_test_app):
+    await create_test_client.post(
+        "/register", form={"username": "frank", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/login", form={"username": "frank", "password": "secret123"}
+    )
+
+    response = await create_test_client.post(
+        "/profile/edit", form={"username": "frankie"}, follow_redirects=True
+    )
+    body = await response.get_data()
+    assert "@frankie" in str(body)
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "frankie")
+                )
+            ).fetchone()
+            assert row is not None
+
+            old_row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "frank")
+                )
+            ).fetchone()
+            assert old_row is None
+
+    async with create_test_client.session_transaction() as session:
+        assert session["username"] == "frankie"
+
+
+@pytest.mark.asyncio
+async def test_profile_edit_duplicate_username(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "gina", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/register", form={"username": "harry", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/login", form={"username": "harry", "password": "secret123"}
+    )
+
+    response = await create_test_client.post(
+        "/profile/edit", form={"username": "gina"}
+    )
+    body = await response.get_data()
+    assert "Username already exists" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_profile_edit_same_username_ok(create_test_client):
+    await create_test_client.post(
+        "/register", form={"username": "irene", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/login", form={"username": "irene", "password": "secret123"}
+    )
+
+    response = await create_test_client.post(
+        "/profile/edit", form={"username": "irene"}
+    )
+    body = await response.get_data()
+    assert "Username already exists" not in str(body)
+    assert response.status_code == 302
+```
+
+`test_profile_edit_requires_login` locks the door: an anonymous visitor gets redirected to `/login`, and we assert on the `Location` header to be sure that's where they went. The rename test is the interesting one. We follow the redirect so we see the updated profile page with the new `@frankie` handle, then we open the database and confirm the row moved from `frank` to `frankie`, and finally we peek inside the session with `session_transaction` to prove the session now carries the new name. The last two tests guard the edges of that feature: renaming to a name someone else already has is rejected, but saving your own unchanged name is fine, because a user should always be allowed to keep the name they already have.
+
+[Save the file](https://fmze.co/fftq-5.7.4).
+
+So far every test has used a single client, but following is a two-person activity, and one cookie jar can only hold one session. To test it we spin up two clients from the same app, each with its own session, so alice and bob can act independently. Create `tests/test_relationship.py`.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import pytest
+from quart import current_app
+from sqlalchemy import select, update
+
+from relationship.models import relationship_table
+from user.models import user_table
+
+
+async def _register_and_login(client, username: str, password: str = "secret123") -> None:
+    await client.post("/register", form={"username": username, "password": password})
+    await client.post("/login", form={"username": username, "password": password})
+
+
+@pytest.mark.asyncio
+async def test_follow_and_unfollow(create_test_app):
+    alice_client = create_test_app.test_client()
+    await _register_and_login(alice_client, "alice")
+
+    bob_client = create_test_app.test_client()
+    await _register_and_login(bob_client, "bob")
+
+    response = await alice_client.post("/follow/bob")
+    assert response.status_code == 302
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            rows = (await conn.execute(select(relationship_table))).fetchall()
+            assert len(rows) == 1
+
+    response = await alice_client.post("/unfollow/bob")
+    assert response.status_code == 302
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            rows = (await conn.execute(select(relationship_table))).fetchall()
+            assert len(rows) == 0
+
+
+@pytest.mark.asyncio
+async def test_follow_requires_login(create_test_client):
+    response = await create_test_client.post("/follow/nobody")
+    assert response.status_code == 302
+    assert "/login" in response.headers.get("Location", "")
+```
+
+Notice we ask `create_test_app` for the client ourselves with `create_test_app.test_client()`, once for alice and once for bob, instead of using the shared `create_test_client` fixture. Now each user has a real, separate session. The `_register_and_login` helper just saves us from repeating those two calls for every user. With that in place the story is easy to read: alice follows bob, we check the `relationship` table has exactly one row, alice unfollows, and the row is gone. And of course following requires a login, so an anonymous follow bounces to `/login`.
+
+[Save the file](https://fmze.co/fftq-5.7.5).
+
+Finally, add the tests that cover what other people see: the Follow and Unfollow buttons, the followers and following lists, their empty states, and removing an avatar. Add these to `test_relationship.py`.
+
+{lang=python,line-numbers=on,starting-line-number=46}
+```
+@pytest.mark.asyncio
+async def test_profile_shows_relationship_state(create_test_app):
+    alice_client = create_test_app.test_client()
+    await _register_and_login(alice_client, "alice")
+
+    bob_client = create_test_app.test_client()
+    await _register_and_login(bob_client, "bob")
+
+    response = await alice_client.get("/user/bob")
+    body = await response.get_data()
+    assert "Follow" in str(body)
+
+    await alice_client.post("/follow/bob")
+
+    response = await alice_client.get("/user/bob")
+    body = await response.get_data()
+    assert "Unfollow" in str(body)
+
+
+@pytest.mark.asyncio
+async def test_followers_list(create_test_app):
+    alice_client = create_test_app.test_client()
+    await _register_and_login(alice_client, "alice")
+
+    bob_client = create_test_app.test_client()
+    await _register_and_login(bob_client, "bob")
+
+    await alice_client.post("/follow/bob")
+
+    response = await bob_client.get("/user/bob/followers")
+    body = str(await response.get_data())
+    assert "alice" in body
+    assert "<img" in body
+
+    response = await alice_client.get("/user/alice/following")
+    body = str(await response.get_data())
+    assert "bob" in body
+
+
+@pytest.mark.asyncio
+async def test_follow_lists_empty(create_test_app):
+    client = create_test_app.test_client()
+    await _register_and_login(client, "carol")
+
+    response = await client.get("/user/carol/followers")
+    body = str(await response.get_data())
+    assert "No followers yet" in body
+
+    response = await client.get("/user/carol/following")
+    body = str(await response.get_data())
+    assert "Not following anyone yet" in body
+
+
+@pytest.mark.asyncio
+async def test_delete_image(create_test_app):
+    client = create_test_app.test_client()
+    await _register_and_login(client, "dave")
+
+    # Give dave a custom avatar (a non-null image timestamp) directly in the DB.
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            await conn.execute(
+                update(user_table)
+                .where(user_table.c.username == "dave")
+                .values(image=1783000000)
+            )
+
+    response = await client.post("/profile/delete-image")
+    assert response.status_code == 302
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "dave")
+                )
+            ).fetchone()
+            assert row.image is None
+
+    response = await client.get("/user/dave")
+    body = str(await response.get_data())
+    assert "/static/default_profile.png" in body
+```
+
+`test_profile_shows_relationship_state` reads the page the way a visitor would: before following, alice sees a "Follow" button on bob's profile; after following, that same button reads "Unfollow". The list tests confirm bob's followers page names alice and shows her avatar image, and that alice's following page names bob. The empty-state test matters more than it seems, because an empty list is a common place for a template to crash, so we assert on the friendly "No followers yet" and "Not following anyone yet" copy. And `test_delete_image` seeds an avatar straight into the database, deletes it through the route, then checks both that the column is back to `None` and that the profile falls back to the default image. Seeding state directly like that is a handy way to test a feature without dragging a real file upload into every test.
+
+[Save the file](https://fmze.co/fftq-5.7.6).
+
+Run the whole suite with `pytest` and watch it come up green. From here on, every time we add posting, the feed, comments, and likes, this suite quietly stands guard over the user layer we just built, so a change three lessons from now can't silently break login.
+
+## Posting: Messages, Images, and Permalinks <!-- 5.8 -->
 
 It's time for the content itself. In this lesson we'll build posts: a message, an optional image, and a permanent, shareable address for each one. That address, the permalink, is worth getting right, so we'll design it carefully.
 
@@ -1461,7 +1898,7 @@ post_image_table = Table(
 
 Each row is one image belonging to a post, with the same timestamp `image_id` trick we used for avatars, plus its scaled `width` and a `position` so multiple images keep their order. In the interface we'll allow one image per post, but the storage is ready for more.
 
-[Save the file](https://fmze.co/fftq-5.7.1).
+[Save the file](https://fmze.co/fftq-5.8.1).
 
 Now those two URL pieces, the `uid` and the slug. Let's add both helpers to `utils/helpers.py`:
 
@@ -1493,7 +1930,7 @@ Here's the design. A permalink like `/post/ab12cd34/i-need-to-go-to-the-supermar
 
 The second part is the slug, made by `slugify` from the message: lowercased, stripped of punctuation, and cut to the first few words. The slug is purely cosmetic, there for readability and search engines. Only the `uid` matters for lookup, which lets us do a neat trick later: if the slug in the URL is stale or missing, we redirect to the correct one.
 
-[Save the file](https://fmze.co/fftq-5.7.2).
+[Save the file](https://fmze.co/fftq-5.8.2).
 
 Post images keep their aspect ratio but are scaled to a fixed height so several could sit side by side neatly. That's a different transform than the square crop we used for avatars, so let's add it to `utils/imaging.py`:
 
@@ -1518,7 +1955,7 @@ def image_height_transform(
 
 It's the same Wand pattern as before, but instead of cropping to a square, `transform(resize="x200")` scales the image to two hundred pixels tall and keeps the width proportional. It returns both the image id and the resulting width, which we store so the layout knows how much room to leave.
 
-[Save the file](https://fmze.co/fftq-5.7.3).
+[Save the file](https://fmze.co/fftq-5.8.3).
 
 The post form is short. Create `post/forms.py`:
 
@@ -1542,7 +1979,7 @@ class PostForm(QuartForm):
 
 A required message limited to five hundred characters, and an optional image with the same image-only validation we used for avatars. Nothing new here, which is the point: once you know quart-wtforms, every form looks like this.
 
-[Save the file](https://fmze.co/fftq-5.7.4).
+[Save the file](https://fmze.co/fftq-5.8.4).
 
 Now the views. Create `post/views.py` with the imports and blueprint:
 
@@ -1671,7 +2108,7 @@ We look the post up by its `uid` alone, ignoring the slug, and 404 if there's no
 
 That redirect is the trick. It means every post has exactly one correct address that search engines will index, no matter what slug someone typed or linked. A stale slug still finds the post and then bounces to the right URL.
 
-[Save the file](https://fmze.co/fftq-5.7.5).
+[Save the file](https://fmze.co/fftq-5.8.5).
 
 Register the blueprint in `application.py` and import the two new models in `migrations/env.py`, the same two-step dance as before. Then create the home and detail templates with the post form and a simple card for each post, and run the migration for the `post` and `post_image` tables:
 
@@ -1684,7 +2121,7 @@ $ docker compose run --rm web uv run alembic upgrade head
 
 Restart the app, write a post, attach a photo. It shows up on your home page with its image scaled to a tidy height, and clicking its timestamp takes you to its permalink. We have content. Now let's make it flow between users.
 
-## The Feed: Fan-out on Write <!-- 5.8 -->
+## The Feed: Fan-out on Write <!-- 5.9 -->
 
 Right now your home page shows only your own posts. A social feed shows posts from everyone you follow, newest activity first. In this lesson we'll build that, and the way we build it is the most important architectural idea in the whole chapter, so let's think about it before we code.
 
@@ -1708,7 +2145,7 @@ feed_table = Table(
 
 The key thing to understand is `user_id` here is not the author. It's the feed's owner, the recipient. One post by a popular user creates many feed rows, one per follower, each with that follower as `user_id`. The `updated` column is what we sort a feed by, so the freshest activity floats to the top.
 
-[Save the file](https://fmze.co/fftq-5.8.1) and now let's write the fan-out logic in its own file. Create `utils/feed_ops.py`:
+[Save the file](https://fmze.co/fftq-5.9.1) and now let's write the fan-out logic in its own file. Create `utils/feed_ops.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -1734,7 +2171,7 @@ async def fan_out_post(conn, post_id: int, recipient_ids: Iterable[int]) -> None
 
 `add_to_feed` writes a single feed row, and `fan_out_post` loops over a set of recipients and writes one for each. We wrap the recipients in `set()` so nobody gets a duplicate row. This is the whole fan-out engine, and we'll extend it in a couple of lessons when comments start bubbling posts around.
 
-[Save the file](https://fmze.co/fftq-5.8.2).
+[Save the file](https://fmze.co/fftq-5.9.2).
 
 Now wire it into `create_post`. Import the helpers at the top of `post/views.py`:
 
@@ -1755,7 +2192,7 @@ Then, right after we insert the post and get its `post_id`, fan it out:
 
 Remember the `followers` helper we wrote back in the relationship lesson, and said to keep in mind? This is the moment. We fetch everyone who follows the author, add the author themselves so your own posts show in your own feed, and fan the post out to all of them. Every one of those users now has a feed row for this post.
 
-[Save the file](https://fmze.co/fftq-5.8.3).
+[Save the file](https://fmze.co/fftq-5.9.3).
 
 Now the home page reads from the feed instead of the author's own posts. This query joins three tables, so let's replace the `home` view's query:
 
@@ -1784,7 +2221,7 @@ Now the home page reads from the feed instead of the author's own posts. This qu
 
 We start from `feed_table` and keep only the rows where the feed owner is us. Then we join to `post_table` to get each post's content, and join again to `user_table` to get the author's name and avatar. We order by the feed's `updated` column so the newest activity is on top, and take the first ten. Add `user_table` to the imports for the join.
 
-[Save the file](https://fmze.co/fftq-5.8.4).
+[Save the file](https://fmze.co/fftq-5.9.4).
 
 One page of ten posts isn't enough for an active feed, so let's add infinite scroll: when you reach the bottom, load the next page. That means an endpoint that returns just the next batch of post cards. Add a `feed` view:
 
@@ -1807,7 +2244,7 @@ async def feed():
 
 This takes an `offset` from the query string and returns the next slice of the feed, rendered with a small partial template, `_feed_items.html`, that loops over posts and renders each card. Pull the feed query we just wrote into a shared `_load_feed` helper so both `home` and `feed` use it, differing only by their offset. Add `request` to the imports.
 
-[Save the file](https://fmze.co/fftq-5.8.5). On the front end, a little script watches for the page bottom and fetches the next offset. Create `static/js/infinite_scroll.js`:
+[Save the file](https://fmze.co/fftq-5.9.5). On the front end, a little script watches for the page bottom and fetches the next offset. Create `static/js/infinite_scroll.js`:
 
 {lang=javascript,line-numbers=on}
 ```
@@ -1840,9 +2277,189 @@ document.addEventListener("DOMContentLoaded", () => {
 
 We use an `IntersectionObserver`, the browser's efficient way to notice when an element scrolls into view. We watch an empty sentinel element at the bottom of the feed. When it becomes visible, we fetch the next page by offset and append the returned cards. If the server returns nothing, we're at the end and we stop asking.
 
-[Save the file](https://fmze.co/fftq-5.8.6) and load it from the home template, adding a `<div id="feed-sentinel"></div>` after the feed. Rebuild, run the migration for the `feed` table, then restart. Log in as two accounts, follow one from the other, and post. The post now appears in the follower's home feed, and scrolling loads older posts. The feed works, but you still have to refresh to see new posts. Let's fix that with SSE.
+[Save the file](https://fmze.co/fftq-5.9.6) and load it from the home template, adding a `<div id="feed-sentinel"></div>` after the feed. Rebuild, run the migration for the `feed` table, then restart. Log in as two accounts, follow one from the other, and post. The post now appears in the follower's home feed, and scrolling loads older posts. The feed works, but you still have to refresh to see new posts. Let's fix that with SSE.
 
-## Going Live: the SSE Broker and EventSource Client <!-- 5.9 -->
+## Messages and Feed Tests <!-- 5.10 -->
+
+We just taught the feed how to fan out on write, and that fan-out is exactly the kind of logic that's easy to break and hard to notice, because it happens behind the scenes. A post shows up, or it doesn't, and if it quietly stops reaching followers we might not see it for weeks. So this lesson locks down posting and the feed. The good news is we already built the test harness back in the user tests, so `conftest.py` is done; we just add new test files that reuse those same fixtures.
+
+Start with `tests/test_post.py`. The first two tests are the heart of the whole app: a post lands in its author's own feed, and a post lands in a follower's feed.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import pytest
+from quart import current_app
+from sqlalchemy import select
+
+from post.models import feed_table, post_table
+
+
+async def _register_and_login(client, username: str, password: str = "secret123") -> None:
+    await client.post("/register", form={"username": username, "password": password})
+    await client.post("/login", form={"username": username, "password": password})
+
+
+@pytest.mark.asyncio
+async def test_create_post_appears_in_own_feed(create_test_client, create_test_app):
+    await _register_and_login(create_test_client, "alice")
+
+    response = await create_test_client.post("/post", form={"message": "hello world"})
+    assert response.status_code == 302
+
+    home_response = await create_test_client.get("/")
+    body = await home_response.get_data()
+    assert "hello world" in str(body)
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            posts = (await conn.execute(select(post_table))).fetchall()
+            assert len(posts) == 1
+            feed_rows = (await conn.execute(select(feed_table))).fetchall()
+            assert len(feed_rows) == 1  # the author's own feed row
+
+
+@pytest.mark.asyncio
+async def test_follower_sees_post_in_feed(create_test_app):
+    alice_client = create_test_app.test_client()
+    await _register_and_login(alice_client, "alice")
+
+    bob_client = create_test_app.test_client()
+    await _register_and_login(bob_client, "bob")
+
+    await bob_client.post("/follow/alice")
+    await alice_client.post("/post", form={"message": "hi followers"})
+
+    home_response = await bob_client.get("/")
+    body = await home_response.get_data()
+    assert "hi followers" in str(body)
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            feed_rows = (await conn.execute(select(feed_table))).fetchall()
+            # one for the author (alice) + one for the follower (bob)
+            assert len(feed_rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_post_requires_login(create_test_client):
+    response = await create_test_client.post("/post", form={"message": "hi"})
+    assert response.status_code == 302
+    assert "/login" in response.headers.get("Location", "")
+```
+
+The first test posts as alice and then checks two layers at once: the message appears on her home page, and the database holds exactly one post and one feed row, her own. The second test is the one that really matters, because it proves fan-out end to end. Using the two-client trick from the user tests, bob follows alice, alice posts, and bob sees the message on his home page without doing anything. We then count the feed rows and assert there are two, one for alice and one for bob, which is the invisible half of fan-out that no page would ever show us directly. And the last test keeps the door locked: posting without logging in redirects to `/login`.
+
+[Save the file](https://fmze.co/fftq-5.10.1).
+
+Posts can carry an image, and testing a file upload is a little different because we have to hand the route a real file. Quart's test client lets us pass a `FileStorage` object in a `files` mapping, so we build a small in-memory PNG with Wand and send it. Create `tests/test_post_image.py`.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import io
+
+import pytest
+from quart import current_app
+from sqlalchemy import select
+from wand.color import Color
+from wand.image import Image
+from werkzeug.datastructures import FileStorage
+
+from post.models import post_image_table
+
+
+async def _register_and_login(client, username: str, password: str = "secret123") -> None:
+    await client.post("/register", form={"username": username, "password": password})
+    await client.post("/login", form={"username": username, "password": password})
+
+
+def _img_blob(width: int, height: int) -> bytes:
+    with Image(width=width, height=height, background=Color("green")) as img:
+        img.format = "png"
+        return img.make_blob()
+
+
+@pytest.mark.asyncio
+async def test_create_post_with_image(create_test_app, tmp_path):
+    app = create_test_app
+    app.config["UPLOADS_FOLDER"] = str(tmp_path)
+
+    client = app.test_client()
+    await _register_and_login(client, "shooter")
+
+    # 400x800 scaled to a fixed height of 200 -> 100x200
+    resp = await client.post(
+        "/post",
+        form={"message": "look at this"},
+        files={
+            "image": FileStorage(
+                stream=io.BytesIO(_img_blob(400, 800)),
+                filename="pic.png",
+                content_type="image/png",
+            )
+        },
+    )
+    assert resp.status_code == 302
+
+    async with app.app_context():
+        async with current_app.dbc.begin() as conn:
+            rows = (await conn.execute(select(post_image_table))).fetchall()
+
+    assert len(rows) == 1
+    row = rows[0]
+    saved = tmp_path / "posts" / f"{row.post_id}.{row.image_id}.xlg.png"
+    assert saved.exists()
+    with Image(filename=str(saved)) as img:
+        assert img.height == 200  # fixed height
+        assert img.width == row.width == 100  # aspect preserved (400x800 -> 100x200)
+
+
+@pytest.mark.asyncio
+async def test_post_without_image_has_no_post_image_rows(create_test_app, tmp_path):
+    app = create_test_app
+    app.config["UPLOADS_FOLDER"] = str(tmp_path)
+
+    client = app.test_client()
+    await _register_and_login(client, "texter")
+    resp = await client.post("/post", form={"message": "just words"})
+    assert resp.status_code == 302
+
+    async with app.app_context():
+        async with current_app.dbc.begin() as conn:
+            rows = (await conn.execute(select(post_image_table))).fetchall()
+    assert rows == []
+```
+
+We point `UPLOADS_FOLDER` at pytest's `tmp_path` so the test writes into a throwaway directory instead of our real uploads folder, then we post with a 400 by 800 pixel image attached. After the post we check the `post_image` table has a row, that the file actually landed on disk at the expected path, and that our height transform did its job: the saved image is exactly 200 pixels tall with its aspect ratio preserved, so 400 by 800 becomes 100 by 200. The second test is the mirror image, proving a text-only post creates no `post_image` rows at all, so we never write phantom image records.
+
+[Save the file](https://fmze.co/fftq-5.10.2).
+
+Not every test needs the database or the browser. Some of our logic is plain functions, and those are the cheapest and fastest things to test. Our messages run through a `linkify` helper that turns bare URLs into clickable links while keeping the surrounding text safe, so let's test it directly. Create `tests/test_helpers.py`.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+from utils.helpers import linkify
+
+
+def test_linkify_escapes_and_links():
+    s = str(linkify("hi <b> http://example.com/x"))
+    assert "&lt;b&gt;" in s  # non-URL text escaped
+    assert '<a href="http://example.com/x"' in s
+
+
+def test_linkify_truncates_long_url():
+    url = "http://example.com/" + "a" * 100
+    s = str(linkify(url))
+    assert "…" in s  # display truncated
+    assert 'href="' + url + '"' in s  # href keeps the full URL
+```
+
+These tests don't need `async`, a client, or a fixture, because `linkify` is a pure function: text in, safe HTML out. The first test proves two jobs at once. The stray `<b>` a user typed comes back escaped as `&lt;b&gt;` so it can't inject markup, while a real URL becomes an anchor tag. The second test checks a nice touch: a very long link is shortened with an ellipsis for display, but the `href` still points at the complete URL, so the page stays tidy without breaking the link.
+
+[Save the file](https://fmze.co/fftq-5.10.3).
+
+Run `pytest` again and everything, users, posts, images, and helpers, should be green. Notice how little setup each new file needed: the fixtures we wrote once in the user tests carried the whole way here. That's the payoff of a good `conftest.py`, and it's what makes adding the next round of tests for comments and likes almost free.
+
+## Going Live: the SSE Broker and EventSource Client <!-- 5.11 -->
 
 This is the lesson the whole chapter has been building toward. We have a feed that fills in when you refresh; now we'll make new posts appear the instant they're written, using the Server Sent Events we introduced at the very start. Time to make that promise real.
 
@@ -1947,7 +2564,7 @@ We capture the user's id, then define an async generator `gen`. It subscribes to
 
 The headers make it a stream: `text/event-stream` is the SSE content type, and we turn off caching and buffering. When the browser closes the tab, the generator is cancelled, and we catch that to unsubscribe cleanly. And crucially we set `response.timeout = None`, because this response is meant to stay open forever, not time out like a normal request. Add `make_response` and `asyncio` to the imports.
 
-[Save the file](https://fmze.co/fftq-5.9.1).
+[Save the file](https://fmze.co/fftq-5.11.1).
 
 Now we publish an event when a post is created. Back in `create_post`, after the fan-out, build a payload and push it to the same recipients. Add the imports and the publish call:
 
@@ -1978,7 +2595,7 @@ from utils.helpers import image_url
 
 We build a small dictionary describing the post, everything the browser needs to render a card, and serialize it to JSON. Then we `publish_many` to `recipient_ids`, the exact same set we just fanned the post out to. So the live push and the stored feed always reach the same people. Note we pass `event="post"`, which the browser will listen for by name.
 
-[Save the file](https://fmze.co/fftq-5.9.2).
+[Save the file](https://fmze.co/fftq-5.11.2).
 
 Now the browser side. We connect to `/sse` with the built-in `EventSource` object and render incoming posts. Create `static/js/broadcast.js`:
 
@@ -2017,11 +2634,11 @@ We open an `EventSource` pointed at `/sse`. That one line does all the connectio
 
 When a post event arrives, we parse the JSON and build a card. We use a template literal, the JavaScript string with backticks and `${}` placeholders, to assemble the HTML, and `prepend` it to the top of the feed. This is the template-literal rendering the intro mentioned: no framework, just building a string and inserting it. We escape the text first so a post can't inject HTML, and we skip the card if it's already on the page, which guards against duplicates.
 
-[Save the file](https://fmze.co/fftq-5.9.3) and load it from the home template inside the `scripts` block, alongside the infinite scroll script.
+[Save the file](https://fmze.co/fftq-5.11.3) and load it from the home template inside the `scripts` block, alongside the infinite scroll script.
 
 Now the moment of truth. Open two browsers, or a normal and a private window, and log in as two users who follow each other. Put their home pages side by side and post from one. The post appears on the other's feed instantly, with no refresh. That's Server Sent Events doing exactly what we promised at the start of the chapter. From here it's all engagement: comments and likes.
 
-## Comments and Feed Bubbling <!-- 5.10 -->
+## Comments and Feed Bubbling <!-- 5.12 -->
 
 Now let's let people reply. Comments are straightforward on their own, but they give us a chance to build one of FriendFeed's signature behaviors, and the reason it felt so alive: when someone you follow comments on a post, that post surfaces in your feed even if you don't follow the original author. We'll call that bubbling, and it's the interesting part of this lesson.
 
@@ -2046,7 +2663,7 @@ comment_table = Table(
 
 Nothing surprising: a comment belongs to a post and an author, holds some text, and stamps its own creation time. Add a matching `CommentForm` in a `comment/forms.py` with a single required text field, exactly like our post form.
 
-[Save the file](https://fmze.co/fftq-5.10.1).
+[Save the file](https://fmze.co/fftq-5.12.1).
 
 Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why: "Robert Scoble commented on this". So the feed row needs to record the reason. Update `feed_table` in `post/models.py`:
 
@@ -2069,7 +2686,7 @@ We add `reason_user_id`, who caused the post to bubble, and `reason_type`, what 
 
 The other addition is the `UniqueConstraint` on `user_id` and `post_id` together. This says a post can appear at most once in any given feed. That matters now, because a post could reach your feed two ways at once: you follow the author, and a friend also comments on it. Without the constraint we'd get a duplicate row. Add `String` and `UniqueConstraint` to the imports.
 
-[Save the file](https://fmze.co/fftq-5.10.2) and migrate to add the columns and the constraint:
+[Save the file](https://fmze.co/fftq-5.12.2) and migrate to add the columns and the constraint:
 
 {lang=bash,line-numbers=off}
 ```
@@ -2126,7 +2743,7 @@ We switch to Postgres's own `insert` so we can chain `on_conflict_do_update`. No
 
 `fan_out_post` is unchanged in spirit, and the new `bubble_post` is its sibling: it adds a post to feeds and records the reason it bubbled. Same machinery, one carries attribution.
 
-[Save the file](https://fmze.co/fftq-5.10.3).
+[Save the file](https://fmze.co/fftq-5.12.3).
 
 Now the comment view ties it together. Create `comment/views.py`:
 
@@ -2201,9 +2818,239 @@ We insert the comment, then bubble the post to our followers plus ourselves, tag
 
 Then we ask the feed table who currently has this post, which now includes the freshly bubbled followers, and publish the `comment` event live to exactly those people. So the comment appears in real time on every feed showing that post, and nowhere else.
 
-[Save the file](https://fmze.co/fftq-5.10.4). Register the `comment_app` blueprint, import the comment model in `migrations/env.py`, and add a `comment` event listener to `broadcast.js` that finds the post card by its id and appends the comment text. Restart, and now a comment from someone you follow makes their friend's post pop into your feed, tagged with who commented, live.
+[Save the file](https://fmze.co/fftq-5.12.4). Register the `comment_app` blueprint, import the comment model in `migrations/env.py`, and add a `comment` event listener to `broadcast.js` that finds the post card by its id and appends the comment text. Restart, and now a comment from someone you follow makes their friend's post pop into your feed, tagged with who commented, live.
 
-## Likes and Live Reactions <!-- 5.11 -->
+### Testing comments and bubbling
+
+Comments do more than attach text to a post; commenting bubbles that post into the feeds of the people who follow you, even if they don't follow the original author. That bubbling is subtle logic, so it's worth testing carefully. Two quick tests cover the basics, then two more prove the bubbling actually works.
+
+Start with the basics in `tests/test_comment.py`.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import pytest
+from quart import current_app
+from sqlalchemy import select
+
+from comment.models import comment_table
+from post.models import post_table
+
+
+async def _register_and_login(client, username: str, password: str = "secret123") -> None:
+    await client.post("/register", form={"username": username, "password": password})
+    await client.post("/login", form={"username": username, "password": password})
+
+
+async def _make_post(client, app, message: str = "hello world") -> int:
+    await client.post("/post", form={"message": message})
+    async with app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (await conn.execute(select(post_table))).fetchone()
+    return row.id
+
+
+@pytest.mark.asyncio
+async def test_create_comment(create_test_client, create_test_app):
+    await _register_and_login(create_test_client, "alice")
+    post_id = await _make_post(create_test_client, create_test_app)
+
+    response = await create_test_client.post(
+        f"/comment/{post_id}", form={"comment": "nice post!"}
+    )
+    assert response.status_code == 302
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            comments = (await conn.execute(select(comment_table))).fetchall()
+    assert len(comments) == 1
+    assert comments[0].comment == "nice post!"
+
+
+@pytest.mark.asyncio
+async def test_empty_comment_is_rejected(create_test_client, create_test_app):
+    await _register_and_login(create_test_client, "alice")
+    post_id = await _make_post(create_test_client, create_test_app)
+
+    # An empty comment fails validation, so no row is written.
+    await create_test_client.post(f"/comment/{post_id}", form={"comment": ""})
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            comments = (await conn.execute(select(comment_table))).fetchall()
+    assert comments == []
+
+
+@pytest.mark.asyncio
+async def test_comment_requires_login(create_test_client):
+    response = await create_test_client.post("/comment/1", form={"comment": "hi"})
+    assert response.status_code == 302
+    assert "/login" in response.headers.get("Location", "")
+```
+
+The `_make_post` helper posts a message and reads back its id, which we need because every comment targets a specific post. The first test confirms a comment lands in the `comment` table with the right text; the second proves an empty comment is rejected by the form validator so we never store blank rows; and the third keeps the route behind a login. Notice how much these read like the tests we've already written, because our fixtures and helpers do the heavy lifting.
+
+[Save the file](https://fmze.co/fftq-5.12.5).
+
+Now the interesting part. Bubbling means a post can reach your feed through someone you follow commenting on it. To test that we need three people: an author nobody follows, a commenter, and a viewer who follows only the commenter. Create `tests/test_feed.py`.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import json
+
+import pytest
+from quart import current_app
+from sqlalchemy import select
+
+from post.models import feed_table, post_table
+from post.views import _load_feed
+from user.models import user_table
+from utils.sse import broker
+
+
+async def _register_and_login(client, username: str, password: str = "secret123") -> None:
+    await client.post("/register", form={"username": username, "password": password})
+    await client.post("/login", form={"username": username, "password": password})
+
+
+async def _user_id(app, username: str) -> int:
+    async with app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table.c.id).where(user_table.c.username == username)
+                )
+            ).fetchone()
+    return row.id
+
+
+async def _only_post_id(app) -> int:
+    async with app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (await conn.execute(select(post_table.c.id))).fetchone()
+    return row.id
+
+
+async def _feed_rows(app, user_id: int):
+    async with app.app_context():
+        async with current_app.dbc.begin() as conn:
+            return (
+                await conn.execute(
+                    select(feed_table).where(feed_table.c.user_id == user_id)
+                )
+            ).fetchall()
+
+
+@pytest.mark.asyncio
+async def test_comment_bubbles_post_to_commenters_followers(create_test_app):
+    """A followee commenting surfaces a post you don't otherwise follow, attributed."""
+    app = create_test_app
+    author = app.test_client()
+    await _register_and_login(author, "author")
+    commenter = app.test_client()
+    await _register_and_login(commenter, "commenter")
+    viewer = app.test_client()
+    await _register_and_login(viewer, "viewer")
+
+    # viewer follows the commenter, but NOT the author
+    await viewer.post("/follow/commenter")
+
+    await author.post("/post", form={"message": "friend of a friend post"})
+    viewer_id = await _user_id(app, "viewer")
+    assert await _feed_rows(app, viewer_id) == []  # author isn't followed → not yet here
+
+    # commenter (whom viewer follows) comments → the post bubbles into viewer's feed
+    post_id = await _only_post_id(app)
+    await commenter.post(f"/comment/{post_id}", form={"comment": "interesting"})
+
+    rows = await _feed_rows(app, viewer_id)
+    assert len(rows) == 1
+    assert rows[0].post_id == post_id
+    assert rows[0].reason_user_id == await _user_id(app, "commenter")
+    assert rows[0].reason_type == "comment"
+
+    # attribution resolves through _load_feed
+    async with app.app_context():
+        async with current_app.dbc.begin() as conn:
+            feed = await _load_feed(conn, viewer_id)
+    assert len(feed) == 1
+    assert feed[0]["reason_username"] == "commenter"
+    assert feed[0]["reason_type"] == "comment"
+
+
+@pytest.mark.asyncio
+async def test_bubble_dedups_against_direct_follow(create_test_app):
+    """Following the author AND the commenter yields ONE feed row (direct wins)."""
+    app = create_test_app
+    author = app.test_client()
+    await _register_and_login(author, "author")
+    commenter = app.test_client()
+    await _register_and_login(commenter, "commenter")
+    viewer = app.test_client()
+    await _register_and_login(viewer, "viewer")
+
+    await viewer.post("/follow/author")
+    await viewer.post("/follow/commenter")
+
+    await author.post("/post", form={"message": "dedup me"})
+    viewer_id = await _user_id(app, "viewer")
+    rows = await _feed_rows(app, viewer_id)
+    assert len(rows) == 1 and rows[0].reason_user_id is None  # direct follow, no reason
+
+    post_id = await _only_post_id(app)
+    await commenter.post(f"/comment/{post_id}", form={"comment": "hi"})
+
+    rows = await _feed_rows(app, viewer_id)
+    assert len(rows) == 1  # still one row, not duplicated
+    assert rows[0].reason_user_id is None  # direct-follow row keeps its NULL reason
+```
+
+The first test tells the whole bubbling story. The viewer follows the commenter but not the author, so when the author posts, the viewer's feed is empty, and we assert exactly that. Then the commenter comments, and now the post appears in the viewer's feed with a `reason_type` of "comment" and a `reason_user_id` pointing at the commenter. We even run it through `_load_feed` to confirm the attribution resolves to the friendly "commenter commented on this" form the template will show. The second test guards a nasty edge: if you already follow the author directly, a later comment must not create a second copy of the post in your feed. We assert the row count stays at one and that the original direct-follow row keeps its empty reason, so a real follow always wins over a bubble.
+
+[Save the file](https://fmze.co/fftq-5.12.6).
+
+Bubbling isn't only about the database; it also pushes live. When someone you follow comments on a post you've never seen, that post should slide into your open feed over SSE without a refresh. Add this test to `test_feed.py`. It uses the broker directly to capture what a viewer's live connection would receive.
+
+{lang=python,line-numbers=on,starting-line-number=138}
+```
+@pytest.mark.asyncio
+async def test_comment_live_bubbles_post_over_sse(create_test_app):
+    """Commenting pushes the post live (SSE 'post' event) to the commenter's followers."""
+    app = create_test_app
+    author = app.test_client()
+    await _register_and_login(author, "author")
+    commenter = app.test_client()
+    await _register_and_login(commenter, "commenter")
+    viewer = app.test_client()
+    await _register_and_login(viewer, "viewer")
+
+    await viewer.post("/follow/commenter")  # follows the commenter, not the author
+
+    await author.post("/post", form={"message": "bubble me"})
+    post_id = await _only_post_id(app)
+    viewer_id = await _user_id(app, "viewer")
+
+    q = broker.subscribe(viewer_id)
+    try:
+        await commenter.post(f"/comment/{post_id}", form={"comment": "nice"})
+        events = []
+        while not q.empty():
+            events.append(q.get_nowait())
+    finally:
+        broker.unsubscribe(viewer_id, q)
+
+    post_events = [e for e in events if e.event == "post"]
+    assert post_events, "follower should receive a live 'post' event"
+    data = json.loads(post_events[0].data)
+    assert data["post_id"] == post_id
+    assert data["reason_type"] == "comment"
+    assert data["reason_username"] == "commenter"
+```
+
+Here we subscribe to the broker as the viewer, exactly like a real browser opening its `EventSource` connection, then have the commenter comment. We drain the queue and look for a "post" event, because the whole point is that the post itself arrives live so the card can appear on the viewer's page. We check its payload carries the post id and the "commenter commented on this" attribution. The `try/finally` matters: we always unsubscribe so a leftover queue can't bleed into another test. Run `pytest` and watch comments, bubbling, and the live push all pass.
+
+[Save the file](https://fmze.co/fftq-5.12.7).
+
+## Likes and Live Reactions <!-- 5.13 -->
 
 The last piece of engagement is the like, and it teaches one more idea: making an action idempotent, so clicking Like and Unlike can be the same button toggling on and off, with the database keeping things consistent.
 
@@ -2227,7 +3074,7 @@ like_table = Table(
 
 The unique constraint on `post_id` and `user_id` guarantees one like per person per post. You can't accidentally like the same post twice, and that makes a like a clean on-off toggle rather than a counter we have to babysit.
 
-[Save the file](https://fmze.co/fftq-5.11.1) and migrate as usual, remembering to import the model in `migrations/env.py`.
+[Save the file](https://fmze.co/fftq-5.13.1) and migrate as usual, remembering to import the model in `migrations/env.py`.
 
 Now the toggle view. Create `like/views.py`:
 
@@ -2314,7 +3161,7 @@ It's a toggle. We look for an existing like from this user on this post. If ther
 
 Finally we push a `like` event to everyone who has the post in their feed, carrying the updated list of names so their pages can re-render the likes line live. Same targeted delivery as comments.
 
-[Save the file](https://fmze.co/fftq-5.11.2).
+[Save the file](https://fmze.co/fftq-5.13.2).
 
 FriendFeed had a nice touch: instead of a bare count, it wrote out "Alice, Bob and Carol liked this", and collapsed the list once it got long. Let's build that line as a helper in `utils/helpers.py`:
 
@@ -2334,99 +3181,218 @@ def likes_line(likers, head: int = 3, collapse_over: int = 5) -> str:
 
 If nobody liked it, we show nothing. Up to five names, we list them all with a natural "and" before the last. Beyond that, we show the first three and collapse the rest into "and N other people liked this", so a wildly popular post doesn't print a hundred names. Render this line under each post, and add a `like` listener to `broadcast.js` that replaces it when a like event arrives.
 
-[Save the file](https://fmze.co/fftq-5.11.3). Restart and try it. Like a post and the line updates; like it from another account and watch the names change live on the first. Unlike and it ticks back down. QuartFeed is now a complete, real-time social feed. All that's left is to make sure it stays that way.
+[Save the file](https://fmze.co/fftq-5.13.3). Restart and try it. Like a post and the line updates; like it from another account and watch the names change live on the first. Unlike and it ticks back down. QuartFeed is now a complete, real-time social feed. All that's left is to make sure it stays that way.
 
-## Testing the Live Feed <!-- 5.12 -->
+### Testing likes
 
-We've built a lot, and every piece of it can break as we keep developing. We tested the counter app back in chapter four, so the fixtures will feel familiar; what's new here is testing things we couldn't before: forms with CSRF, logged-in sessions, and the fan-out that happens behind the scenes when someone posts.
-
-Our tests hit forms, and every form has a CSRF token. In a test we don't want to fetch and echo tokens, so we simply turn CSRF off for the test app. Remember that `WTF_CSRF_ENABLED` setting we added: our `create_app` already takes config overrides, so we pass it as `False`. Start with a `conftest.py` in a `tests` folder, reusing the fresh-database fixture pattern from the counter app, and make sure it imports every model so `metadata.create_all` builds all our tables:
+A like is a toggle: click once to like, click again to remove it. That toggle plus the little "who liked this" line under a post are the two things worth testing here. Create `tests/test_like.py`.
 
 {lang=python,line-numbers=on,starting-line-number=1}
-```
-from user.models import user_table  # noqa: F401
-from relationship.models import relationship_table  # noqa: F401
-from post.models import feed_table, post_image_table, post_table  # noqa: F401
-from comment.models import comment_table  # noqa: F401
-from like.models import like_table  # noqa: F401
-```
-
-Then in the app fixture, add `WTF_CSRF_ENABLED=False` to the overrides passed into `create_app`, right alongside the test database settings. With CSRF off, our tests can post forms without wrestling with tokens.
-
-[Save the file](https://fmze.co/fftq-5.12.1).
-
-Let's test registration and login first. Create `tests/test_user.py`:
-
-{lang=python,line-numbers=on}
-```
-import pytest
-
-
-@pytest.mark.asyncio
-async def test_register_and_login(create_test_client):
-    # Registering redirects to the login page.
-    response = await create_test_client.post(
-        "/register", form={"username": "alice", "password": "secret123"}
-    )
-    assert response.status_code == 302
-
-    # The new user can now log in and lands on the home feed.
-    response = await create_test_client.post(
-        "/login", form={"username": "alice", "password": "secret123"}
-    )
-    assert response.status_code == 302
-    assert "/" in response.headers["Location"]
-```
-
-We post to register and assert we get a redirect, our sign that registration succeeded and sent us to login. Then we log in with the same credentials and check we're redirected again, this time toward the home feed. Because the test client keeps cookies between requests, the session set at login carries into later requests, which is exactly how we test logged-in behavior.
-
-[Save the file](https://fmze.co/fftq-5.12.2).
-
-The most valuable test is the one that proves fan-out works, because that logic is invisible in the interface. Create `tests/test_feed.py`:
-
-{lang=python,line-numbers=on}
 ```
 import pytest
 from quart import current_app
 from sqlalchemy import select
 
-from post.models import feed_table
+from like.models import like_table
+from post.models import post_table
+
+
+async def _register_and_login(client, username: str, password: str = "secret123") -> None:
+    await client.post("/register", form={"username": username, "password": password})
+    await client.post("/login", form={"username": username, "password": password})
+
+
+async def _make_post(client, app, message: str = "hello world") -> int:
+    await client.post("/post", form={"message": message})
+    async with app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (await conn.execute(select(post_table))).fetchone()
+    return row.id
 
 
 @pytest.mark.asyncio
-async def test_post_fans_out_to_followers(create_test_client, create_test_app):
-    # Two users: bob follows alice.
-    await create_test_client.post("/register", form={"username": "alice", "password": "pw123456"})
-    await create_test_client.post("/register", form={"username": "bob", "password": "pw123456"})
+async def test_like_adds_row(create_test_client, create_test_app):
+    await _register_and_login(create_test_client, "alice")
+    post_id = await _make_post(create_test_client, create_test_app)
 
-    await create_test_client.post("/login", form={"username": "bob", "password": "pw123456"})
-    await create_test_client.post("/follow/alice")
+    response = await create_test_client.post(f"/like/{post_id}")
+    assert response.status_code == 302
 
-    # alice posts.
-    await create_test_client.post("/login", form={"username": "alice", "password": "pw123456"})
-    await create_test_client.post("/post", form={"message": "hello world"})
-
-    # The post should have landed in both alice's and bob's feeds.
     async with create_test_app.app_context():
         async with current_app.dbc.begin() as conn:
-            rows = (await conn.execute(select(feed_table))).fetchall()
-            owners = {row.user_id for row in rows}
-    assert len(owners) == 2
+            likes = (await conn.execute(select(like_table))).fetchall()
+    assert len(likes) == 1
+
+
+@pytest.mark.asyncio
+async def test_like_toggles_off(create_test_client, create_test_app):
+    await _register_and_login(create_test_client, "alice")
+    post_id = await _make_post(create_test_client, create_test_app)
+
+    await create_test_client.post(f"/like/{post_id}")  # like
+    await create_test_client.post(f"/like/{post_id}")  # unlike
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            likes = (await conn.execute(select(like_table))).fetchall()
+    assert len(likes) == 0
+
+
+@pytest.mark.asyncio
+async def test_like_requires_login(create_test_client):
+    response = await create_test_client.post("/like/1")
+    assert response.status_code == 302
+    assert "/login" in response.headers.get("Location", "")
 ```
 
-This test tells a little story: bob follows alice, alice posts, and we then look directly in the `feed` table. We assert there are feed rows for two distinct owners, alice and bob, proving the post fanned out to the follower and to the author. Checking the database directly like this is how we test side effects that never appear on a page.
+The first test likes a post and checks a row appears in the `like` table. The second clicks the same button twice and confirms the row is gone, which is the whole toggle behavior in two lines. The third keeps the route behind a login. Because our `like` table has a unique constraint on the post and user pair, these tests also quietly prove we can't double-like a post, since a second like removes the first instead of stacking.
 
-[Save the file](https://fmze.co/fftq-5.12.3).
+[Save the file](https://fmze.co/fftq-5.13.4).
 
-We should also make sure the live stream even connects. A full SSE test is involved because the stream never ends, but we can at least confirm the endpoint opens with the right content type. Add a quick check that a logged-in request to `/sse` returns an `text/event-stream` response, and that an anonymous one redirects to login, proving `login_required` guards it.
+The "A and B liked this" line has its own small helper, `likes_line`, that collapses long lists so a wildly popular post doesn't print a hundred names. It's a pure function, so we test it directly. Add these to the `tests/test_helpers.py` we started when testing messages.
 
-Run the whole suite inside the container, the same way we ran the counter tests:
-
-{lang=bash,line-numbers=off}
+{lang=python,line-numbers=on,starting-line-number=15}
 ```
-$ docker compose up -d db
-$ docker compose run --rm web uv run pytest
+from utils.helpers import likes_line
+
+
+def test_likes_line_empty():
+    assert str(likes_line([])) == ""
+
+
+def test_likes_line_one():
+    s = str(likes_line(["alice"]))
+    assert '<a href="/user/alice">alice</a> liked this' in s
+
+
+def test_likes_line_few():
+    s = str(likes_line(["a", "b", "c"]))
+    assert " and " in s and "liked this" in s
+    for u in ("a", "b", "c"):
+        assert "/user/%s" % u in s  # each name is a profile link
+
+
+def test_likes_line_collapses_over_five():
+    s = str(likes_line(["u1", "u2", "u3", "u4", "u5", "u6", "u7"]))  # 7 > 5
+    assert "4 other people" in s  # 7 - 3 shown
+    assert "likers-more" in s and "likers-full" in s
+    assert "/user/u1" in s and "/user/u7" in s  # first shown + present in full list
 ```
 
-Green across the board. We've built QuartFeed from an empty boilerplate into a real social application: accounts, a follow graph, posts with images and permalinks, a materialized feed that fans out on write, live updates over Server Sent Events, comments that bubble, likes that collapse, and a test suite that guards it all. That's a genuinely production-shaped app, and you built every layer of it yourself.
+Four tests walk the helper from nothing to a crowd. With no likers it prints an empty string, so an unliked post shows nothing at all. With one name it links that name and adds "liked this". With a few it joins them with "and", each name a link to that person's profile. And once we pass five, it collapses to "first few names and 4 other people", tucking the rest into a hidden `likers-full` list that the page can reveal on click. That last test is the one that protects us, because the collapsing math is exactly the kind of off-by-one that slips through by eye.
 
+[Save the file](https://fmze.co/fftq-5.13.5).
+
+## Testing the Live Feed <!-- 5.14 -->
+
+We've tested every feature on its own: users, posts and the feed, comments and bubbling, and likes. The one piece left to pin down is the layer that ties them together, the SSE broker that pushes events to open pages in real time. It's also the piece that's easiest to get subtly wrong, because a broker that delivers to the wrong people looks like it's working right up until someone sees a post they shouldn't. So this final lesson tests the live layer directly.
+
+The broker is a plain in-memory object: users subscribe with a queue, and we publish events to specific user ids. That means we can test it without a browser at all, just by subscribing and reading what lands in the queue. Create `tests/test_sse.py`, starting with the broker in isolation.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import pytest
+from quart import current_app
+from sqlalchemy import select
+
+from utils.sse import ServerSentEvent, broker
+from user.models import user_table
+
+
+async def _register_and_login(client, username: str, password: str = "secret123") -> None:
+    await client.post("/register", form={"username": username, "password": password})
+    await client.post("/login", form={"username": username, "password": password})
+
+
+async def _user_id(app, username: str) -> int:
+    async with app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table.c.id).where(user_table.c.username == username)
+                )
+            ).fetchone()
+    return row.id
+
+
+@pytest.mark.asyncio
+async def test_broker_delivers_only_to_addressed_user():
+    """Unit: publish(user_id) reaches only that user's queues, not everyone's."""
+    q_one = broker.subscribe(1)
+    q_two = broker.subscribe(2)
+    try:
+        await broker.publish(1, ServerSentEvent(event="post", data="{}"))
+        assert q_one.qsize() == 1
+        assert q_two.qsize() == 0
+    finally:
+        broker.unsubscribe(1, q_one)
+        broker.unsubscribe(2, q_two)
+```
+
+Two users subscribe, we publish a single event addressed to user one, and we assert user one's queue got exactly one event while user two's stayed empty. That one assertion is the broker's entire contract: an event goes only to the person it's addressed to. Testing the broker on its own like this, with plain integer ids and no database, is the fastest possible way to prove that routing is correct.
+
+[Save the file](https://fmze.co/fftq-5.14.1).
+
+The unit test proves the broker routes correctly, but the real question is whether our routes ask it to. Posting must push live to followers and to no one else. This is a regression test, and the comment on it tells the story: we once had a single global broadcast that pushed every post to every open feed, so strangers briefly saw posts that then vanished on refresh. Add the two tests that lock that door.
+
+{lang=python,line-numbers=on,starting-line-number=46}
+```
+@pytest.mark.asyncio
+async def test_sse_post_not_delivered_to_non_follower(create_test_app):
+    """A post must NOT be pushed live to a user who does not follow the author.
+
+    Regression for the leak where a single global broadcast pushed every post
+    to every open feed. Non-followers briefly saw posts that then disappeared
+    on refresh, because the persisted ``feed`` fan-out is follower-scoped.
+    """
+    carol_client = create_test_app.test_client()
+    await _register_and_login(carol_client, "carol")
+
+    jorge_client = create_test_app.test_client()
+    await _register_and_login(jorge_client, "jorge")
+
+    carol_id = await _user_id(create_test_app, "carol")
+    jorge_id = await _user_id(create_test_app, "jorge")
+
+    # jorge does NOT follow carol. Both have a live SSE connection open.
+    q_carol = broker.subscribe(carol_id)
+    q_jorge = broker.subscribe(jorge_id)
+    try:
+        await carol_client.post(
+            "/post", form={"message": "I need to go to the supermarket"}
+        )
+        # carol sees her own post live; jorge (a non-follower) must not.
+        assert q_carol.qsize() == 1
+        assert q_jorge.qsize() == 0
+    finally:
+        broker.unsubscribe(carol_id, q_carol)
+        broker.unsubscribe(jorge_id, q_jorge)
+
+
+@pytest.mark.asyncio
+async def test_sse_post_delivered_to_follower(create_test_app):
+    """A follower DOES receive the author's post live over SSE."""
+    carol_client = create_test_app.test_client()
+    await _register_and_login(carol_client, "carol")
+
+    dave_client = create_test_app.test_client()
+    await _register_and_login(dave_client, "dave")
+
+    await dave_client.post("/follow/carol")
+
+    carol_id = await _user_id(create_test_app, "carol")
+    dave_id = await _user_id(create_test_app, "dave")
+
+    q_dave = broker.subscribe(dave_id)
+    try:
+        await carol_client.post("/post", form={"message": "hello followers"})
+        assert q_dave.qsize() == 1
+    finally:
+        broker.unsubscribe(dave_id, q_dave)
+```
+
+The two tests are mirror images, and together they define correct live delivery. In the first, jorge doesn't follow carol, so when carol posts, her own queue gets the event and jorge's stays empty. In the second, dave follows carol, so his queue does receive it. We subscribe to the broker exactly the way each user's browser would, then check the queue sizes after the post. Read side by side, they say the live push follows the same follower rule as the saved feed, which is exactly the bug we needed to prevent.
+
+[Save the file](https://fmze.co/fftq-5.14.2).
+
+Run the whole suite one last time with `pytest`. Users, posts, images, helpers, comments, bubbling, likes, and now the live broker all pass together. We built a real social application in this chapter, and we finish it the way any application worth keeping should be finished: with a test suite that will tell us the moment any of it breaks.

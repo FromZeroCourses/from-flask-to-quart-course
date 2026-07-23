@@ -2,8 +2,6 @@ import pytest
 from quart import current_app
 from sqlalchemy import select
 
-from comment.models import comment_table
-from like.models import like_table
 from post.models import feed_table, post_table
 
 
@@ -51,42 +49,6 @@ async def test_follower_sees_post_in_feed(create_test_app):
             feed_rows = (await conn.execute(select(feed_table))).fetchall()
             # one for the author (alice) + one for the follower (bob)
             assert len(feed_rows) == 2
-
-
-@pytest.mark.asyncio
-async def test_comment_and_like_toggle(create_test_client, create_test_app):
-    await _register_and_login(create_test_client, "alice")
-    await create_test_client.post("/post", form={"message": "hello world"})
-
-    async with create_test_app.app_context():
-        async with current_app.dbc.begin() as conn:
-            post_row = (await conn.execute(select(post_table))).fetchone()
-    post_id = post_row.id
-
-    comment_response = await create_test_client.post(
-        f"/comment/{post_id}", form={"comment": "nice post!"}
-    )
-    assert comment_response.status_code == 302
-
-    like_response = await create_test_client.post(f"/like/{post_id}")
-    assert like_response.status_code == 302
-
-    async with create_test_app.app_context():
-        async with current_app.dbc.begin() as conn:
-            comments = (await conn.execute(select(comment_table))).fetchall()
-            assert len(comments) == 1
-            assert comments[0].comment == "nice post!"
-
-            likes = (await conn.execute(select(like_table))).fetchall()
-            assert len(likes) == 1
-
-    # Toggling like again removes it.
-    await create_test_client.post(f"/like/{post_id}")
-
-    async with create_test_app.app_context():
-        async with current_app.dbc.begin() as conn:
-            likes = (await conn.execute(select(like_table))).fetchall()
-            assert len(likes) == 0
 
 
 @pytest.mark.asyncio

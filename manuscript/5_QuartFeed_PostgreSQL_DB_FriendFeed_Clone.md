@@ -1070,7 +1070,7 @@ $ uv add --no-sync Wand
 
 The `--no-sync` flag records Wand in `pyproject.toml` and `uv.lock` without installing it on your machine, which is what we want since the app only ever runs in the container.
 
-Two settings, and notice they're plain values, not code. `UPLOADS_FOLDER` is a folder path, `IMAGE_URL` is a web path, and both live in `.quartenv` rather than in the app because a different machine could keep its uploads somewhere else entirely.
+These two values are plain settings, not code, so they live in `.quartenv` rather than in the app: a different machine might keep its uploads somewhere else entirely. `UPLOADS_FOLDER` is where uploaded files land on disk, and `IMAGE_URL` is the public path the browser uses to fetch them back.
 
 {lang=ini,line-numbers=on,starting-line-number=9}
 ```
@@ -1078,9 +1078,9 @@ UPLOADS_FOLDER=static/uploads
 IMAGE_URL=/static/uploads
 ```
 
-[Save the file](https://fmze.co/fftq-5.6.2). Now let's read those two settings into `settings.py`:
+[Save the file](https://fmze.co/fftq-5.6.2), which also carries the `pyproject.toml` and `uv.lock` changes `uv add` just made.
 
-[Save the file](https://fmze.co/fftq-5.6.2), which also carries the `pyproject.toml` and `uv.lock` changes `uv add` just made. Now read the settings into `settings.py`:
+Now read those two settings into `settings.py`, the same `os.environ.get` pattern as the rest, each with a sensible default:
 
 {lang=python,line-numbers=on,starting-line-number=10}
 ```
@@ -1088,7 +1088,7 @@ UPLOADS_FOLDER = os.environ.get("UPLOADS_FOLDER", "static/uploads")
 IMAGE_URL = os.environ.get("IMAGE_URL", "/static/uploads")
 ```
 
-`UPLOADS_FOLDER` is where files land on disk, and `IMAGE_URL` is the public path the browser uses to fetch them back. They point at the same `static/uploads` folder, which Quart already serves for us.
+Both point at the same `static/uploads` folder, which Quart already serves for us.
 
 [Save the file](https://fmze.co/fftq-5.6.3).
 
@@ -1192,7 +1192,11 @@ def image_url(user_id: int, image: Optional[int], size: str = "lg") -> str:
 
 We add `get_user_by_id`, the companion to our username lookup, because editing a profile means loading the current user by their session id. Then `image_url` builds the avatar path: if the user has an image id, it points at their uploaded file at the requested size; if not, it returns a default picture. Add `current_app` to the imports at the top of the file for this to work.
 
-[Save the file](https://fmze.co/fftq-5.6.6). Drop a placeholder `default_profile.png` into the `static` folder so logged-out or avatar-less users still show something.
+[Save the file](https://fmze.co/fftq-5.6.6).
+
+A user with no avatar still needs something to show, so drop a placeholder `default_profile.png` into the `static` folder. This is the picture `image_url` returns when a user has no image id of their own.
+
+![The static folder holds default_profile.png next to the uploads folder, so avatar-less users always have a picture to fall back on.](images/5.6-scene9-img2.png)
 
 One housekeeping detail while we're here. Uploaded avatars are runtime data, not source code, so they shouldn't end up in git. Add a `.gitignore` next to the app:
 

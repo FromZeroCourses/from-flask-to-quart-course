@@ -1409,9 +1409,9 @@ Restart the app and try it. Register, log in, hit Edit profile, and upload a pho
 
 ## User Tests <!-- 5.7 -->
 
-We've built registration, login, sessions, following, and profiles, and every one of those pieces can break quietly as we keep adding features. Before we move on to posting and the feed, let's pin this behavior down with tests. We tested the counter app back in chapter four, so the shape will feel familiar; what's new is that user features bring three things we couldn't test before: forms protected by a CSRF token, logged-in sessions that have to survive from one request to the next, and behavior that changes depending on which user is asking.
+Here's a nice payoff of having built QuartFeed on top of the counter app: we didn't just inherit its structure, we inherited its tests. Look in the `tests` folder and you'll still find the counter's `conftest.py` and a `test_counter.py`. That `conftest.py`, with its fresh-database fixtures, is exactly the harness we want; we just have to point it at QuartFeed instead of the counter. So rather than write testing from scratch, this lesson adapts what we already have to cover registration, login, profiles, and following.
 
-We'll start with the test harness. Every test needs a fresh, empty database so one test can't leak state into another, and it needs an app that doesn't fight us over CSRF tokens. Create a `tests` folder with a `conftest.py`, reusing the fresh-database pattern from the counter app. The one thing to get right is the imports at the top: `metadata.create_all` only builds the tables it knows about, so we import every model first to register it, even the ones we haven't tested yet.
+Start with `conftest.py`. The fixtures that spin up a throwaway database and hand us a test client need no changes at all. We make just two adjustments. First, QuartFeed's forms carry a CSRF token, and we don't want to fetch and echo tokens in every test, so we add `WTF_CSRF_ENABLED: False` to the config the fixture yields. Second, our fixture builds the tables with `metadata.create_all`, which only builds tables it knows about, so we import the models we're about to test to register them.
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -1427,12 +1427,9 @@ load_dotenv(".quartenv")
 from application import create_app
 from db import metadata
 
-# Make sure every table is registered on `metadata` before create_all runs.
+# Register the tables we're testing so metadata.create_all builds them.
 from user.models import user_table  # noqa: F401
 from relationship.models import relationship_table  # noqa: F401
-from post.models import post_table, feed_table  # noqa: F401
-from comment.models import comment_table  # noqa: F401
-from like.models import like_table  # noqa: F401
 
 
 @pytest_asyncio.fixture
@@ -1485,11 +1482,11 @@ async def create_test_client(create_test_app):
     return create_test_app.test_client()
 ```
 
-Three fixtures build on each other. `create_db` drops and recreates a `_test` database, builds every table, and hands back a config dictionary; notice the last two keys, `TESTING` and `WTF_CSRF_ENABLED` set to `False`. Because our `create_app` already accepts config overrides, turning CSRF off for tests is as simple as passing that flag. `create_test_app` feeds that config into `create_app` and runs the app's startup and shutdown. `create_test_client` gives us a Quart test client, which is the object we'll actually poke at routes with. The client keeps cookies between requests, and that detail is the whole reason we can test logged-in behavior at all.
+The three fixtures are the same ones the counter app gave us. `create_db` drops and recreates a `_test` database, builds every registered table, and yields a config dictionary, to which we've now added `TESTING` and the CSRF flag. `create_test_app` feeds that config into `create_app`, and `create_test_client` hands us a Quart test client. The one detail worth remembering is that the client keeps cookies between requests, which is the whole reason we can test logged-in behavior at all.
 
 [Save the file](https://fmze.co/fftq-5.7.1).
 
-Now the user tests themselves. Create `tests/test_user.py` and start with registration. We check three things: that the page loads, that a successful signup actually writes a user to the database with a hashed password, and that the form rejects bad input.
+Now the counter's `test_counter.py` tested a feature we no longer have: it hit `/` and checked for "Counter: 1". QuartFeed's home page is a feed, not a counter, so that test is obsolete. We'll replace it with tests for the real features, keeping the exact shape the counter test taught us: make a request, assert on the response, and verify against the database. Delete `test_counter.py` and create `tests/test_user.py`, starting with registration.
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -1546,11 +1543,11 @@ async def test_register_missing_fields(create_test_client):
     assert "This field is required." in str(body)
 ```
 
-A successful registration answers with a `302` redirect, so that status code is our signal that it worked. But a redirect alone doesn't prove much, so `test_register_creates_user` opens the database directly and confirms alice's row exists, and that her stored password is not the plaintext we sent. That one assertion quietly guarantees we're hashing passwords. The last two tests push on the unhappy paths: registering the same username twice surfaces "User already exists", and an empty form comes back with the form's own "This field is required." message, which tells us validation is running before we ever touch the database.
+The counter test asserted the count went up; our equivalent asserts a user was created. A successful registration answers with a `302` redirect, so that status is our first signal. But a redirect alone proves little, so `test_register_creates_user` opens the database directly, just like the counter test read the counter row, and confirms alice exists with a password that is not the plaintext we sent, which quietly guarantees we hash passwords. The last two tests push the unhappy paths: registering the same username twice surfaces "User already exists", and an empty form comes back with "This field is required.", proving validation runs before we ever touch the database.
 
 [Save the file](https://fmze.co/fftq-5.7.2).
 
-Next, add the login and logout tests to the same file. This is where the test client's cookie jar earns its keep: we register, then log in, and the session cookie set at login rides along into the next request automatically.
+Next, add the login and logout tests to the same file. This is where the test client's cookie jar earns its keep: we register, then log in, and the session cookie set at login rides into the next request automatically.
 
 {lang=python,line-numbers=on,starting-line-number=54}
 ```
@@ -1607,7 +1604,7 @@ async def test_logout(create_test_client):
     assert home_response.status_code == 302
 ```
 
-After carol logs in, we simply request the home page and check that we land on the real feed, the page that says "QuartFeed", instead of being bounced to login. That proves the session stuck. The two failure tests confirm that a wrong username and a wrong password both come back with the same "Invalid username or password" message, which is deliberate: we never tell an attacker which half they got right. And `test_logout` runs the round trip in reverse. Once erin logs out, asking for the home page redirects her away, which is exactly what we want for a page that requires a login.
+After carol logs in, we request the home page and check we land on the real feed, the page that says "QuartFeed", instead of being bounced to login, which proves the session stuck. The two failure tests confirm a wrong username and a wrong password both return the same "Invalid username or password" message, which is deliberate: we never tell an attacker which half they got right. And `test_logout` runs the round trip in reverse, so once erin logs out, asking for the home page redirects her away, exactly what we want for a page that requires a login.
 
 [Save the file](https://fmze.co/fftq-5.7.3).
 
@@ -1693,7 +1690,7 @@ async def test_profile_edit_same_username_ok(create_test_client):
     assert response.status_code == 302
 ```
 
-`test_profile_edit_requires_login` locks the door: an anonymous visitor gets redirected to `/login`, and we assert on the `Location` header to be sure that's where they went. The rename test is the interesting one. We follow the redirect so we see the updated profile page with the new `@frankie` handle, then we open the database and confirm the row moved from `frank` to `frankie`, and finally we peek inside the session with `session_transaction` to prove the session now carries the new name. The last two tests guard the edges of that feature: renaming to a name someone else already has is rejected, but saving your own unchanged name is fine, because a user should always be allowed to keep the name they already have.
+`test_profile_edit_requires_login` locks the door: an anonymous visitor gets redirected to `/login`, and we assert on the `Location` header to be sure. The rename test is the interesting one. We follow the redirect so we see the updated profile page with the new `@frankie` handle, then open the database to confirm the row moved from `frank` to `frankie`, and finally peek inside the session with `session_transaction` to prove the session now carries the new name. The last two tests guard the edges: renaming to a name someone else already has is rejected, but saving your own unchanged name is fine, because a user should always be allowed to keep the name they already have.
 
 [Save the file](https://fmze.co/fftq-5.7.4).
 
@@ -1842,7 +1839,7 @@ async def test_delete_image(create_test_app):
 
 [Save the file](https://fmze.co/fftq-5.7.6).
 
-Run the whole suite with `pytest` and watch it come up green. From here on, every time we add posting, the feed, comments, and likes, this suite quietly stands guard over the user layer we just built, so a change three lessons from now can't silently break login.
+Run the whole suite with `pytest` and watch it come up green. We started from the counter's inherited harness and grew it into a real user-feature test suite. From here on, every time we add posting, the feed, comments, and likes, this suite quietly stands guard over the user layer, so a change three lessons from now can't silently break login.
 
 ## Posting: Messages, Images, and Permalinks <!-- 5.8 -->
 
@@ -2281,9 +2278,23 @@ We use an `IntersectionObserver`, the browser's efficient way to notice when an 
 
 ## Messages and Feed Tests <!-- 5.10 -->
 
-We just taught the feed how to fan out on write, and that fan-out is exactly the kind of logic that's easy to break and hard to notice, because it happens behind the scenes. A post shows up, or it doesn't, and if it quietly stops reaching followers we might not see it for weeks. So this lesson locks down posting and the feed. The good news is we already built the test harness back in the user tests, so `conftest.py` is done; we just add new test files that reuse those same fixtures.
+We just taught the feed how to fan out on write, and that fan-out is exactly the kind of logic that's easy to break and hard to notice, because it happens behind the scenes. A post shows up, or it doesn't, and if it quietly stops reaching followers we might not see it for weeks. So this lesson locks down posting and the feed. We already built the test harness back in the user tests, so the fixtures carry over unchanged; we just add new test files that reuse them.
 
-Start with `tests/test_post.py`. The first two tests are the heart of the whole app: a post lands in its author's own feed, and a post lands in a follower's feed.
+There's one small thing to update first. Remember that our `create_db` fixture builds tables with `metadata.create_all`, which only builds the tables whose models have been imported. Back in the user tests we only had `user` and `relationship`; now we have posts and the feed, so open `conftest.py` and add their models to the registration list at the top.
+
+{lang=python,line-numbers=on,starting-line-number=13}
+```
+# Register the tables we're testing so metadata.create_all builds them.
+from user.models import user_table  # noqa: F401
+from relationship.models import relationship_table  # noqa: F401
+from post.models import post_table, feed_table  # noqa: F401
+```
+
+Importing `post.models` registers every table defined there, including `post_image`, so the test database will now build the post, feed, and post-image tables alongside the user ones.
+
+[Save the file](https://fmze.co/fftq-5.10.1).
+
+Now start with `tests/test_post.py`. The first two tests are the heart of the whole app: a post lands in its author's own feed, and a post lands in a follower's feed.
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -2349,7 +2360,7 @@ async def test_post_requires_login(create_test_client):
 
 The first test posts as alice and then checks two layers at once: the message appears on her home page, and the database holds exactly one post and one feed row, her own. The second test is the one that really matters, because it proves fan-out end to end. Using the two-client trick from the user tests, bob follows alice, alice posts, and bob sees the message on his home page without doing anything. We then count the feed rows and assert there are two, one for alice and one for bob, which is the invisible half of fan-out that no page would ever show us directly. And the last test keeps the door locked: posting without logging in redirects to `/login`.
 
-[Save the file](https://fmze.co/fftq-5.10.1).
+[Save the file](https://fmze.co/fftq-5.10.2).
 
 Posts can carry an image, and testing a file upload is a little different because we have to hand the route a real file. Quart's test client lets us pass a `FileStorage` object in a `files` mapping, so we build a small in-memory PNG with Wand and send it. Create `tests/test_post_image.py`.
 
@@ -2431,7 +2442,7 @@ async def test_post_without_image_has_no_post_image_rows(create_test_app, tmp_pa
 
 We point `UPLOADS_FOLDER` at pytest's `tmp_path` so the test writes into a throwaway directory instead of our real uploads folder, then we post with a 400 by 800 pixel image attached. After the post we check the `post_image` table has a row, that the file actually landed on disk at the expected path, and that our height transform did its job: the saved image is exactly 200 pixels tall with its aspect ratio preserved, so 400 by 800 becomes 100 by 200. The second test is the mirror image, proving a text-only post creates no `post_image` rows at all, so we never write phantom image records.
 
-[Save the file](https://fmze.co/fftq-5.10.2).
+[Save the file](https://fmze.co/fftq-5.10.3).
 
 Not every test needs the database or the browser. Some of our logic is plain functions, and those are the cheapest and fastest things to test. Our messages run through a `linkify` helper that turns bare URLs into clickable links while keeping the surrounding text safe, so let's test it directly. Create `tests/test_helpers.py`.
 
@@ -2455,7 +2466,7 @@ def test_linkify_truncates_long_url():
 
 These tests don't need `async`, a client, or a fixture, because `linkify` is a pure function: text in, safe HTML out. The first test proves two jobs at once. The stray `<b>` a user typed comes back escaped as `&lt;b&gt;` so it can't inject markup, while a real URL becomes an anchor tag. The second test checks a nice touch: a very long link is shortened with an ellipsis for display, but the `href` still points at the complete URL, so the page stays tidy without breaking the link.
 
-[Save the file](https://fmze.co/fftq-5.10.3).
+[Save the file](https://fmze.co/fftq-5.10.4).
 
 Run `pytest` again and everything, users, posts, images, and helpers, should be green. Notice how little setup each new file needed: the fixtures we wrote once in the user tests carried the whole way here. That's the payoff of a good `conftest.py`, and it's what makes adding the next round of tests for comments and likes almost free.
 
@@ -2824,7 +2835,20 @@ Then we ask the feed table who currently has this post, which now includes the f
 
 Comments do more than attach text to a post; commenting bubbles that post into the feeds of the people who follow you, even if they don't follow the original author. That bubbling is subtle logic, so it's worth testing carefully. Two quick tests cover the basics, then two more prove the bubbling actually works.
 
-Start with the basics in `tests/test_comment.py`.
+First, the now-familiar one-line update to `conftest.py`: we just added the `comment` table, so register its model so the test database builds it.
+
+{lang=python,line-numbers=on,starting-line-number=13}
+```
+# Register the tables we're testing so metadata.create_all builds them.
+from user.models import user_table  # noqa: F401
+from relationship.models import relationship_table  # noqa: F401
+from post.models import post_table, feed_table  # noqa: F401
+from comment.models import comment_table  # noqa: F401
+```
+
+[Save the file](https://fmze.co/fftq-5.12.5).
+
+Now start with the basics in `tests/test_comment.py`.
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -2889,7 +2913,7 @@ async def test_comment_requires_login(create_test_client):
 
 The `_make_post` helper posts a message and reads back its id, which we need because every comment targets a specific post. The first test confirms a comment lands in the `comment` table with the right text; the second proves an empty comment is rejected by the form validator so we never store blank rows; and the third keeps the route behind a login. Notice how much these read like the tests we've already written, because our fixtures and helpers do the heavy lifting.
 
-[Save the file](https://fmze.co/fftq-5.12.5).
+[Save the file](https://fmze.co/fftq-5.12.6).
 
 Now the interesting part. Bubbling means a post can reach your feed through someone you follow commenting on it. To test that we need three people: an author nobody follows, a commenter, and a viewer who follows only the commenter. Create `tests/test_feed.py`.
 
@@ -3006,7 +3030,7 @@ async def test_bubble_dedups_against_direct_follow(create_test_app):
 
 The first test tells the whole bubbling story. The viewer follows the commenter but not the author, so when the author posts, the viewer's feed is empty, and we assert exactly that. Then the commenter comments, and now the post appears in the viewer's feed with a `reason_type` of "comment" and a `reason_user_id` pointing at the commenter. We even run it through `_load_feed` to confirm the attribution resolves to the friendly "commenter commented on this" form the template will show. The second test guards a nasty edge: if you already follow the author directly, a later comment must not create a second copy of the post in your feed. We assert the row count stays at one and that the original direct-follow row keeps its empty reason, so a real follow always wins over a bubble.
 
-[Save the file](https://fmze.co/fftq-5.12.6).
+[Save the file](https://fmze.co/fftq-5.12.7).
 
 Bubbling isn't only about the database; it also pushes live. When someone you follow comments on a post you've never seen, that post should slide into your open feed over SSE without a refresh. Add this test to `test_feed.py`. It uses the broker directly to capture what a viewer's live connection would receive.
 
@@ -3048,7 +3072,7 @@ async def test_comment_live_bubbles_post_over_sse(create_test_app):
 
 Here we subscribe to the broker as the viewer, exactly like a real browser opening its `EventSource` connection, then have the commenter comment. We drain the queue and look for a "post" event, because the whole point is that the post itself arrives live so the card can appear on the viewer's page. We check its payload carries the post id and the "commenter commented on this" attribution. The `try/finally` matters: we always unsubscribe so a leftover queue can't bleed into another test. Run `pytest` and watch comments, bubbling, and the live push all pass.
 
-[Save the file](https://fmze.co/fftq-5.12.7).
+[Save the file](https://fmze.co/fftq-5.12.8).
 
 ## Likes and Live Reactions <!-- 5.13 -->
 
@@ -3185,7 +3209,23 @@ If nobody liked it, we show nothing. Up to five names, we list them all with a n
 
 ### Testing likes
 
-A like is a toggle: click once to like, click again to remove it. That toggle plus the little "who liked this" line under a post are the two things worth testing here. Create `tests/test_like.py`.
+A like is a toggle: click once to like, click again to remove it. That toggle plus the little "who liked this" line under a post are the two things worth testing here.
+
+One last time, register the new table in `conftest.py` so the test database builds it. With `like` added, the import list now matches every model in the app.
+
+{lang=python,line-numbers=on,starting-line-number=13}
+```
+# Register the tables we're testing so metadata.create_all builds them.
+from user.models import user_table  # noqa: F401
+from relationship.models import relationship_table  # noqa: F401
+from post.models import post_table, feed_table  # noqa: F401
+from comment.models import comment_table  # noqa: F401
+from like.models import like_table  # noqa: F401
+```
+
+[Save the file](https://fmze.co/fftq-5.13.4).
+
+Now create `tests/test_like.py`.
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -3247,7 +3287,7 @@ async def test_like_requires_login(create_test_client):
 
 The first test likes a post and checks a row appears in the `like` table. The second clicks the same button twice and confirms the row is gone, which is the whole toggle behavior in two lines. The third keeps the route behind a login. Because our `like` table has a unique constraint on the post and user pair, these tests also quietly prove we can't double-like a post, since a second like removes the first instead of stacking.
 
-[Save the file](https://fmze.co/fftq-5.13.4).
+[Save the file](https://fmze.co/fftq-5.13.5).
 
 The "A and B liked this" line has its own small helper, `likes_line`, that collapses long lists so a wildly popular post doesn't print a hundred names. It's a pure function, so we test it directly. Add these to the `tests/test_helpers.py` we started when testing messages.
 
@@ -3281,7 +3321,7 @@ def test_likes_line_collapses_over_five():
 
 Four tests walk the helper from nothing to a crowd. With no likers it prints an empty string, so an unliked post shows nothing at all. With one name it links that name and adds "liked this". With a few it joins them with "and", each name a link to that person's profile. And once we pass five, it collapses to "first few names and 4 other people", tucking the rest into a hidden `likers-full` list that the page can reveal on click. That last test is the one that protects us, because the collapsing math is exactly the kind of off-by-one that slips through by eye.
 
-[Save the file](https://fmze.co/fftq-5.13.5).
+[Save the file](https://fmze.co/fftq-5.13.6).
 
 ## Testing the Live Feed <!-- 5.14 -->
 

@@ -1196,8 +1196,6 @@ We add `get_user_by_id`, the companion to our username lookup, because editing a
 
 A user with no avatar still needs something to show, so drop a placeholder `default_profile.png` into the `static` folder. This is the picture `image_url` returns when a user has no image id of their own.
 
-![The static folder holds default_profile.png next to the uploads folder, so avatar-less users always have a picture to fall back on.](images/5.6-scene9-img2.png)
-
 One housekeeping detail while we're here. Uploaded avatars are runtime data, not source code, so they shouldn't end up in git. Add a `.gitignore` next to the app:
 
 {lang=text,line-numbers=on}

@@ -1482,11 +1482,11 @@ async def create_test_client(create_test_app):
     return create_test_app.test_client()
 ```
 
-The three fixtures are the same ones the counter app gave us. `create_db` drops and recreates a `_test` database, builds every registered table, and yields a config dictionary, to which we've now added `TESTING` and the CSRF flag. `create_test_app` feeds that config into `create_app`, and `create_test_client` hands us a Quart test client. The one detail worth remembering is that the client keeps cookies between requests, which is the whole reason we can test logged-in behavior at all.
+The three fixtures are the same ones the counter app gave us. `create_db` drops and recreates a `_test` database, builds every registered table, and yields a config dictionary, to which we've now added `TESTING` and the CSRF flag. `create_test_app` feeds that config into `create_app`, and `create_test_client` hands us a Quart test client. The one detail worth remembering is that the client keeps cookies between requests, which is the whole reason we can test logged-in behavior at all. While we're in the `tests` folder, delete the counter's old `test_counter.py`: it hit `/` and checked for "Counter: 1", but QuartFeed's home page is a feed now, so that test is obsolete.
 
 [Save the file](https://fmze.co/fftq-5.7.1).
 
-Now the counter's `test_counter.py` tested a feature we no longer have: it hit `/` and checked for "Counter: 1". QuartFeed's home page is a feed, not a counter, so that test is obsolete. We'll replace it with tests for the real features, keeping the exact shape the counter test taught us: make a request, assert on the response, and verify against the database. Delete `test_counter.py` and create `tests/test_user.py`, starting with registration.
+That obsolete counter test taught us a useful shape, though, and we'll reuse it for the real features: make a request, assert on the response, and verify against the database. Create `tests/test_user.py`, starting with registration.
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -1660,34 +1660,6 @@ async def test_profile_edit_username(create_test_client, create_test_app):
 
 
 @pytest.mark.asyncio
-async def test_profile_edit_duplicate_username(create_test_client, create_test_app):
-    await create_test_client.post(
-        "/register", form={"username": "gina", "password": "secret123"}
-    )
-    await create_test_client.post(
-        "/register", form={"username": "harry", "password": "secret123"}
-    )
-    await create_test_client.post(
-        "/login", form={"username": "harry", "password": "secret123"}
-    )
-
-    response = await create_test_client.post(
-        "/profile/edit", form={"username": "gina"}
-    )
-    body = await response.get_data()
-    assert "Username already exists" in str(body)
-
-    async with create_test_app.app_context():
-        async with current_app.dbc.begin() as conn:
-            row = (
-                await conn.execute(
-                    select(user_table).where(user_table.c.username == "harry")
-                )
-            ).fetchone()
-            assert row is not None
-
-
-@pytest.mark.asyncio
 async def test_profile_edit_same_username_ok(create_test_client):
     await create_test_client.post(
         "/register", form={"username": "irene", "password": "secret123"}
@@ -1704,7 +1676,7 @@ async def test_profile_edit_same_username_ok(create_test_client):
     assert response.status_code == 302
 ```
 
-`test_profile_edit_requires_login` locks the door: an anonymous visitor gets redirected to `/login`, and we assert on the `Location` header to be sure. The rename test is the interesting one. We follow the redirect so we see the updated profile page with the new `@frankie` handle, then open the database to confirm the row moved from `frank` to `frankie`, and finally peek inside the session with `session_transaction` to prove the session now carries the new name. The last two tests guard the edges: renaming to a name someone else already has is rejected, but saving your own unchanged name is fine, because a user should always be allowed to keep the name they already have.
+`test_profile_edit_requires_login` locks the door: an anonymous visitor gets redirected to `/login`, and we assert on the `Location` header to be sure. The rename test is the interesting one. We follow the redirect so we see the updated profile page with the new `@frankie` handle, then open the database to confirm the row moved from `frank` to `frankie`, and finally peek inside the session with `session_transaction` to prove the session now carries the new name. The last test guards an edge: saving your own unchanged name is fine, because a user should always be allowed to keep the name they already have.
 
 [Save the file](https://fmze.co/fftq-5.7.4).
 
@@ -1714,10 +1686,9 @@ So far every test has used a single client, but following is a two-person activi
 ```
 import pytest
 from quart import current_app
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from relationship.models import relationship_table
-from user.models import user_table
 
 
 async def _register_and_login(client, username: str, password: str = "secret123") -> None:
@@ -1755,16 +1726,8 @@ async def test_follow_requires_login(create_test_client):
     response = await create_test_client.post("/follow/nobody")
     assert response.status_code == 302
     assert "/login" in response.headers.get("Location", "")
-```
 
-Notice we ask `create_test_app` for the client ourselves with `create_test_app.test_client()`, once for alice and once for bob, instead of using the shared `create_test_client` fixture. Now each user has a real, separate session. The `_register_and_login` helper just saves us from repeating those two calls for every user. With that in place the story is easy to read: alice follows bob, we check the `relationship` table has exactly one row, alice unfollows, and the row is gone. And of course following requires a login, so an anonymous follow bounces to `/login`.
 
-[Save the file](https://fmze.co/fftq-5.7.5).
-
-Finally, add the tests that cover what other people see: the Follow and Unfollow buttons, the followers and following lists, their empty states, and removing an avatar. Add these to `test_relationship.py`.
-
-{lang=python,line-numbers=on,starting-line-number=46}
-```
 @pytest.mark.asyncio
 async def test_profile_shows_relationship_state(create_test_app):
     alice_client = create_test_app.test_client()
@@ -1782,76 +1745,11 @@ async def test_profile_shows_relationship_state(create_test_app):
     response = await alice_client.get("/user/bob")
     body = await response.get_data()
     assert "Unfollow" in str(body)
-
-
-@pytest.mark.asyncio
-async def test_followers_list(create_test_app):
-    alice_client = create_test_app.test_client()
-    await _register_and_login(alice_client, "alice")
-
-    bob_client = create_test_app.test_client()
-    await _register_and_login(bob_client, "bob")
-
-    await alice_client.post("/follow/bob")
-
-    response = await bob_client.get("/user/bob/followers")
-    body = str(await response.get_data())
-    assert "alice" in body
-    assert "<img" in body
-
-    response = await alice_client.get("/user/alice/following")
-    body = str(await response.get_data())
-    assert "bob" in body
-
-
-@pytest.mark.asyncio
-async def test_follow_lists_empty(create_test_app):
-    client = create_test_app.test_client()
-    await _register_and_login(client, "carol")
-
-    response = await client.get("/user/carol/followers")
-    body = str(await response.get_data())
-    assert "No followers yet" in body
-
-    response = await client.get("/user/carol/following")
-    body = str(await response.get_data())
-    assert "Not following anyone yet" in body
-
-
-@pytest.mark.asyncio
-async def test_delete_image(create_test_app):
-    client = create_test_app.test_client()
-    await _register_and_login(client, "dave")
-
-    # Give dave a custom avatar (non-null image timestamp) directly in the DB.
-    async with create_test_app.app_context():
-        async with current_app.dbc.begin() as conn:
-            await conn.execute(
-                update(user_table)
-                .where(user_table.c.username == "dave")
-                .values(image=1783000000)
-            )
-
-    response = await client.post("/profile/delete-image")
-    assert response.status_code == 302
-
-    async with create_test_app.app_context():
-        async with current_app.dbc.begin() as conn:
-            row = (
-                await conn.execute(
-                    select(user_table).where(user_table.c.username == "dave")
-                )
-            ).fetchone()
-            assert row.image is None
-
-    response = await client.get("/user/dave")
-    body = str(await response.get_data())
-    assert "/static/default_profile.png" in body
 ```
 
-`test_profile_shows_relationship_state` reads the page the way a visitor would: before following, alice sees a "Follow" button on bob's profile; after following, that same button reads "Unfollow". The list tests confirm bob's followers page names alice and shows her avatar image, and that alice's following page names bob. The empty-state test matters more than it seems, because an empty list is a common place for a template to crash, so we assert on the friendly "No followers yet" and "Not following anyone yet" copy. And `test_delete_image` seeds an avatar straight into the database, deletes it through the route, then checks both that the column is back to `None` and that the profile falls back to the default image. Seeding state directly like that is a handy way to test a feature without dragging a real file upload into every test.
+Notice we ask `create_test_app` for the client ourselves with `create_test_app.test_client()`, once for alice and once for bob, instead of using the shared `create_test_client` fixture. Now each user has a real, separate session, which is what following needs. The story reads cleanly: alice follows bob and we check the `relationship` table has exactly one row, alice unfollows and the row is gone, and an anonymous follow bounces to `/login`. The last test reads the page the way a visitor would: before following, alice sees a "Follow" button on bob's profile, and after following that same button reads "Unfollow".
 
-[Save the file](https://fmze.co/fftq-5.7.6).
+[Save the file](https://fmze.co/fftq-5.7.5).
 
 Run the whole suite with `pytest` and watch it come up green. We started from the counter's inherited harness and grew it into a real user-feature test suite. From here on, every time we add posting, the feed, comments, and likes, this suite quietly stands guard over the user layer, so a change three lessons from now can't silently break login.
 

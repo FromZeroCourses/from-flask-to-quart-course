@@ -1389,7 +1389,7 @@ Now show it. Open `templates/user/profile.html` and put the avatar next to the u
         </div>
 ```
 
-A flex row puts the picture and the name side by side, and `rounded-circle` is the Bootstrap class that crops it to a circle in the browser. Our square avatar is what makes that look right.
+A flex row puts the picture and the name side by side, and `rounded-circle` is the Bootstrap class that crops it into a circle. Our square avatar is what makes that circle look right.
 
 Last touch: nobody can reach the edit page yet. Open `templates/navbar.html` and add the link for logged-in users:
 

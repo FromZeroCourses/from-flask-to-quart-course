@@ -3367,3 +3367,380 @@ The two tests are mirror images, and together they define correct live delivery.
 [Save the file](https://fmze.co/fftq-5.14.2).
 
 Run the whole suite one last time with `pytest`. Users, posts, images, helpers, comments, bubbling, likes, and now the live broker all pass together. We built a real social application in this chapter, and we finish it the way any application worth keeping should be finished: with a test suite that will tell us the moment any of it breaks.
+
+## Followers and Following Pages <!-- 5.15 -->
+
+QuartFeed works end to end, and we have a test suite that proves it. That is exactly the moment to keep building, because now every feature we add can be locked down the instant we write it. Let's start with something the interface hints at but doesn't deliver: a profile shows a follower count, but clicking it goes nowhere. We'll give those counts real pages that list a user's followers and who they follow, and, since we know how to test now, we'll prove it works the moment it's built.
+
+Both pages are the same shape, a grid of user cards, so they share one template. Add two routes to `user/views.py`.
+
+{lang=python,line-numbers=on,starting-line-number=91}
+```
+@user_app.route("/user/<username>/followers", endpoint="followers")
+async def followers_list(username: str) -> str:
+    engine = current_app.dbc  # type: ignore
+    async with engine.begin() as conn:
+        profile_user = await get_user_by_username(conn, username)
+        if profile_user is None:
+            abort(404)
+
+        result = await conn.execute(
+            select(user_table)
+            .select_from(
+                user_table.join(
+                    relationship_table,
+                    relationship_table.c.fm_user_id == user_table.c.id,
+                )
+            )
+            .where(relationship_table.c.to_user_id == profile_user.id)
+            .order_by(user_table.c.username)
+        )
+        rows = result.fetchall()
+
+    users = [
+        {"id": row.id, "username": row.username, "avatar_url": image_url(row.id, row.image)}
+        for row in rows
+    ]
+
+    return await render_template(
+        "user/user_list.html",
+        title="Followers",
+        profile_user=profile_user,
+        users=users,
+        empty_message="No followers yet.",
+    )
+
+
+@user_app.route("/user/<username>/following", endpoint="following")
+async def following_list(username: str) -> str:
+    engine = current_app.dbc  # type: ignore
+    async with engine.begin() as conn:
+        profile_user = await get_user_by_username(conn, username)
+        if profile_user is None:
+            abort(404)
+
+        result = await conn.execute(
+            select(user_table)
+            .select_from(
+                user_table.join(
+                    relationship_table,
+                    relationship_table.c.to_user_id == user_table.c.id,
+                )
+            )
+            .where(relationship_table.c.fm_user_id == profile_user.id)
+            .order_by(user_table.c.username)
+        )
+        rows = result.fetchall()
+
+    users = [
+        {"id": row.id, "username": row.username, "avatar_url": image_url(row.id, row.image)}
+        for row in rows
+    ]
+
+    return await render_template(
+        "user/user_list.html",
+        title="Following",
+        profile_user=profile_user,
+        users=users,
+        empty_message="Not following anyone yet.",
+    )
+```
+
+The two routes are near mirror images. The followers page joins the `relationship` table to `user` on `fm_user_id`, the person doing the following, and filters to rows pointing *at* this profile, which gives us everyone who follows them. The following page flips the join to `to_user_id` to get everyone this user follows. We set a `title` and an `empty_message` per page and hand both to the same template, so one file renders both.
+
+[Save the file](https://fmze.co/fftq-5.15.1).
+
+Now that shared template. Create `templates/user/user_list.html`.
+
+{lang=html,line-numbers=on,starting-line-number=1}
+```
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - @{{ profile_user.username }}{% endblock %}
+
+{% block content %}
+
+{% include "navbar.html" %}
+
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+
+        <h3 class="mb-3">{{ title }} for @{{ profile_user.username }}</h3>
+
+        {% if users %}
+        <div class="row row-cols-2 row-cols-md-4 g-3">
+            {% for u in users %}
+            <div class="col">
+                <div class="card text-center p-2">
+                    <a href="{{ url_for('user_app.profile', username=u.username) }}" class="text-decoration-underline">
+                        <img src="{{ u.avatar_url }}" class="rounded-circle mb-2" width="80" height="80" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
+                        <div>@{{ u.username }}</div>
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">{{ empty_message }}</p>
+        {% endif %}
+
+    </div>
+</div>
+
+{% endblock %}
+```
+
+The template is deliberately simple: if there are users, lay them out as a grid of cards, each linking to that person's profile; if not, show the friendly empty message we passed in. That `{% else %}` branch is the one worth noticing, because an empty list is a classic place for a page to break, and here it just prints "No followers yet."
+
+[Save the file](https://fmze.co/fftq-5.15.2).
+
+Finally, point the profile's counts at the new pages by wrapping them in links, in `templates/user/profile.html`.
+
+{lang=html,line-numbers=on,starting-line-number=22}
+```
+<a href="{{ url_for('user_app.followers', username=profile_user.username) }}" class="text-decoration-underline">{{ follower_count }} followers</a>
+&middot;
+<a href="{{ url_for('user_app.following', username=profile_user.username) }}" class="text-decoration-underline">{{ following_count }} following</a>
+```
+
+[Save the file](https://fmze.co/fftq-5.15.3).
+
+With the feature built, we test it. Open `tests/test_relationship.py` and add two tests: one that a follower shows up on the followers page with an avatar, and one that both lists show their empty-state copy when nobody's there.
+
+{lang=python,line-numbers=on,starting-line-number=64}
+```
+@pytest.mark.asyncio
+async def test_followers_list(create_test_app):
+    alice_client = create_test_app.test_client()
+    await _register_and_login(alice_client, "alice")
+
+    bob_client = create_test_app.test_client()
+    await _register_and_login(bob_client, "bob")
+
+    await alice_client.post("/follow/bob")
+
+    response = await bob_client.get("/user/bob/followers")
+    body = str(await response.get_data())
+    assert "alice" in body
+    assert "<img" in body
+
+    response = await alice_client.get("/user/alice/following")
+    body = str(await response.get_data())
+    assert "bob" in body
+
+
+@pytest.mark.asyncio
+async def test_follow_lists_empty(create_test_app):
+    client = create_test_app.test_client()
+    await _register_and_login(client, "carol")
+
+    response = await client.get("/user/carol/followers")
+    body = str(await response.get_data())
+    assert "No followers yet" in body
+
+    response = await client.get("/user/carol/following")
+    body = str(await response.get_data())
+    assert "Not following anyone yet" in body
+```
+
+`test_followers_list` has alice follow bob, then loads bob's followers page and checks alice is listed with an image tag, and that alice's own following page lists bob. `test_follow_lists_empty` registers a lonely carol and asserts both her pages render their empty copy instead of crashing. Run `pytest` and both are green. Next we'll polish the profile-editing page with a couple more improvements.
+
+[Save the file](https://fmze.co/fftq-5.15.4).
+
+## Polishing Profile Editing <!-- 5.16 -->
+
+Two small gaps remain on the profile-editing page, and both are the kind of thing users notice: you can upload an avatar but not remove it, and you can rename yourself to a name someone else already has. Let's close both, testing each as we go.
+
+### Removing an avatar
+
+If you can upload a profile picture, you should be able to take it back down. Add a `delete_image` route to `user/views.py`. It clears the avatar files from disk and resets the `image` column to `None`. We support a background request from the edit page, so it answers a `204` to an XHR call and otherwise redirects.
+
+{lang=python,line-numbers=on,starting-line-number=200}
+```
+@user_app.route("/profile/delete-image", methods=["POST"])
+@login_required
+async def delete_image() -> Union[Response, tuple]:
+    form = await EmptyForm.create_form()
+    engine = current_app.dbc  # type: ignore
+    is_xhr = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+    if await form.validate_on_submit():
+        async with engine.begin() as conn:
+            current_user = await get_user_by_id(conn, session["user_id"])
+
+            if current_user is not None and current_user.image is not None:
+                for size, _ in AVATAR_SIZES:
+                    avatar_path = (
+                        _avatars_dir()
+                        / f"{session['user_id']}.{current_user.image}.{size}.png"
+                    )
+                    try:
+                        if avatar_path.exists():
+                            avatar_path.unlink()
+                    except OSError:
+                        # Best-effort: a missing/locked file must not block the
+                        # database reset below.
+                        pass
+
+                await conn.execute(
+                    update(user_table)
+                    .where(user_table.c.id == session["user_id"])
+                    .values(image=None)
+                )
+
+        if is_xhr:
+            return ("", 204)
+
+        await flash("Profile image removed")
+
+    if is_xhr:
+        # CSRF/validation failed for an XHR request.
+        return ("", 400)
+
+    return redirect(url_for(".profile_edit"))
+```
+
+We look up the current user, and if they have a custom avatar we delete each sized PNG, wrapping the unlink in a `try/except` so a missing file can never stop us from clearing the database. Then we set `image` to `None`, which makes the profile fall back to the default picture. The `is_xhr` checks let the same route serve both a plain form submit and a background fetch from the edit page.
+
+[Save the file](https://fmze.co/fftq-5.16.1).
+
+Add the button and the small script that calls it to `templates/user/profile_edit.html`. The button only appears when there's actually a custom image to remove.
+
+{lang=html,line-numbers=on,starting-line-number=31}
+```
+{% if has_custom_image %}
+<div>
+    <input type="hidden" id="delete-csrf" value="{{ delete_form.csrf_token._value() }}">
+    <button type="button" id="delete-image-btn" class="btn btn-link link-primary text-decoration-underline p-0" style="cursor: pointer;">Delete image</button>
+</div>
+{% endif %}
+```
+
+And the script, in the page's `scripts` block:
+
+{lang=html,line-numbers=on,starting-line-number=62}
+```
+    var deleteBtn = document.getElementById('delete-image-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function () {
+            fetch("{{ url_for('user_app.delete_image') }}", {
+                method: "POST",
+                headers: { "X-Requested-With": "XMLHttpRequest" },
+                body: new URLSearchParams({
+                    csrf_token: document.getElementById('delete-csrf').value
+                })
+            }).then(function (res) {
+                if (res.ok) {
+                    document.getElementById('avatar-preview').src = "/static/default_profile.png";
+                    deleteBtn.style.display = "none";
+                }
+            });
+        });
+    }
+```
+
+The script sends the CSRF token in a background `fetch`, and on success it swaps the preview back to the default image and hides the button, so the picture disappears without a page reload.
+
+[Save the file](https://fmze.co/fftq-5.16.2).
+
+Now the test, in `tests/test_relationship.py`. It seeds an avatar directly in the database, deletes it through the route, and checks both the column and the profile fallback. This test needs `update` and the `user` model, so widen the imports at the top of the file to `from sqlalchemy import select, update` and add `from user.models import user_table`.
+
+{lang=python,line-numbers=on,starting-line-number=99}
+```
+@pytest.mark.asyncio
+async def test_delete_image(create_test_app):
+    client = create_test_app.test_client()
+    await _register_and_login(client, "dave")
+
+    # Give dave a custom avatar (non-null image timestamp) directly in the DB.
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            await conn.execute(
+                update(user_table)
+                .where(user_table.c.username == "dave")
+                .values(image=1783000000)
+            )
+
+    response = await client.post("/profile/delete-image")
+    assert response.status_code == 302
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "dave")
+                )
+            ).fetchone()
+            assert row.image is None
+
+    response = await client.get("/user/dave")
+    body = str(await response.get_data())
+    assert "/static/default_profile.png" in body
+```
+
+We post to the route without the XHR header, so we exercise the plain-redirect path and get a `302`. Then we read the row back to confirm `image` is `None`, and load the profile to confirm it now shows the default picture. Seeding the avatar straight into the database keeps the test from having to perform a real file upload.
+
+[Save the file](https://fmze.co/fftq-5.16.3).
+
+### Guarding against duplicate usernames
+
+The other gap: on the edit page a user can rename themselves, but nothing stops them from picking a name someone else already has, which would collide at the database level. Add a check inside `profile_edit` in `user/views.py`, right where we handle the rename.
+
+{lang=python,line-numbers=on,starting-line-number=252}
+```
+        async with engine.begin() as conn:
+            if new_username != current_user.username:
+                existing = await get_user_by_username(conn, new_username)
+                if existing is not None and existing.id != session["user_id"]:
+                    error = "Username already exists"
+
+            if not error:
+                values = {"username": new_username}
+                if ts is not None:
+                    values["image"] = ts
+                await conn.execute(
+                    update(user_table)
+                    .where(user_table.c.id == session["user_id"])
+                    .values(**values)
+                )
+```
+
+We only check when the name actually changes, and we ignore a match against yourself, so re-saving your own name is fine. If someone else already holds it, we set an `error` and skip the update, and the edit page shows "Username already exists" instead of crashing on a constraint violation.
+
+[Save the file](https://fmze.co/fftq-5.16.4).
+
+The test goes in `tests/test_user.py`. Register two users, log in as one, try to rename to the other's name, and confirm it's rejected and nothing changed.
+
+{lang=python,line-numbers=on,starting-line-number=182}
+```
+@pytest.mark.asyncio
+async def test_profile_edit_duplicate_username(create_test_client, create_test_app):
+    await create_test_client.post(
+        "/register", form={"username": "gina", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/register", form={"username": "harry", "password": "secret123"}
+    )
+    await create_test_client.post(
+        "/login", form={"username": "harry", "password": "secret123"}
+    )
+
+    response = await create_test_client.post(
+        "/profile/edit", form={"username": "gina"}
+    )
+    body = await response.get_data()
+    assert "Username already exists" in str(body)
+
+    async with create_test_app.app_context():
+        async with current_app.dbc.begin() as conn:
+            row = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.username == "harry")
+                )
+            ).fetchone()
+            assert row is not None
+```
+
+We assert the page comes back with "Username already exists" and that harry's row is still intact, so a rejected rename leaves the account exactly as it was. Run the whole suite one final time. Every feature we've built is covered, and the tests we wrote at the start still stand guard over everything beneath them. That's the real lesson of this chapter: an application is never truly finished, but with a test suite behind you, it's always safe to keep improving.
+
+[Save the file](https://fmze.co/fftq-5.16.5).

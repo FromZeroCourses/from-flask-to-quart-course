@@ -1204,6 +1204,8 @@ One housekeeping detail while we're here. Uploaded avatars are runtime data, not
 static/uploads/
 ```
 
+[Save the file](https://fmze.co/fftq-5.6.6b).
+
 Editing a profile is a form with a file field, so we need a new form. Open `user/forms.py` and add it below `UserForm`:
 
 {lang=python,line-numbers=on,starting-line-number=17}

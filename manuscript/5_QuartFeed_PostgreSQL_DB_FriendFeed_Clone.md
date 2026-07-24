@@ -1377,6 +1377,8 @@ The avatar is saved, but the profile page still doesn't show it. Back in `user/v
 
 We call the same `image_url` helper, this time with the profile owner's id and image. No size argument, so it hands back the `lg` version, which is the 75 pixel one.
 
+[Save the file](https://fmze.co/fftq-5.6.10a).
+
 Now show it. Open `templates/user/profile.html` and put the avatar next to the username:
 
 {lang=html,line-numbers=on,starting-line-number=12}

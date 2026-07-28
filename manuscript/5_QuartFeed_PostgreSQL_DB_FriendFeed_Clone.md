@@ -1494,6 +1494,8 @@ The three fixtures are the same ones the counter app gave us. `create_db` drops 
 
 That obsolete counter test taught us a useful shape, though, and we'll reuse it for the real features: make a request, assert on the response, and verify against the database. Create `tests/test_user.py`, starting with registration. The first test is the smoke test: ask for the registration page and check that the word Registration comes back in the body.
 
+![Every feature test follows the same three steps: make a request, assert on the response, then verify the row in the database.](images/5.7-scene3-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
 import pytest

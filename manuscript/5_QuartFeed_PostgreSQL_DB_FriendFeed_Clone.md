@@ -1618,6 +1618,8 @@ After carol logs in, we request the home page and check we land on the real feed
 
 The last piece of the single-user story is editing a profile. Add these tests, still in `test_user.py`. Renaming yourself is trickier than it looks, because the username lives in the session too, so we check both the database and the session.
 
+![A rename has to land in two places, the user table row and the session, so the test asserts both.](images/5.7-scene5-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=107}
 ```
 @pytest.mark.asyncio

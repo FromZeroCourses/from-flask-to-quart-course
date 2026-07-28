@@ -1761,6 +1761,8 @@ Notice we ask `create_test_app` for the client ourselves with `create_test_app.t
 
 Run the whole suite with `pytest` and watch it come up green. We started from the counter's inherited harness and grew it into a real user-feature test suite. From here on, every time we add posting, the feed, comments, and likes, this suite quietly stands guard over the user layer, so a change three lessons from now can't silently break login.
 
+![The user test suite sits between every feature we add next and the registration, login, profile, and following code it could quietly break.](images/5.7-scene7-img1.png)
+
 ## Posting: Messages, Images, and Permalinks <!-- 5.8 -->
 
 It's time for the content itself. In this lesson we'll build posts: a message, an optional image, and a permanent, shareable address for each one. That address, the permalink, is worth getting right, so we'll design it carefully.

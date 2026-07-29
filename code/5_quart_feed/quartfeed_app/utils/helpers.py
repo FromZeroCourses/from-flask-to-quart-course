@@ -1,3 +1,6 @@
+import re
+import secrets
+import string
 from functools import wraps
 from typing import Any, Callable, Optional
 
@@ -34,3 +37,19 @@ def image_url(user_id: int, image: Optional[int], size: str = "lg") -> str:
     if image:
         return f"{current_app.config['IMAGE_URL']}/avatars/{user_id}.{image}.{size}.png"
     return "/static/default_profile.png"
+
+
+_UID_ALPHABET = string.ascii_lowercase + string.digits
+
+
+def generate_uid(length: int = 8) -> str:
+    """Return a short, opaque, URL-safe id for a post permalink."""
+    return "".join(secrets.choice(_UID_ALPHABET) for _ in range(length))
+
+
+def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
+    """Turn a post message into an SEO-friendly URL slug."""
+    words = re.sub(r"[^a-z0-9\s-]", "", (text or "").lower()).split()
+    slug = "-".join(words[:max_words])[:max_len].strip("-")
+    return slug or "post"
+

@@ -1865,6 +1865,8 @@ Here's the design. A permalink like `/post/ab12cd34/i-need-to-go-to-the-supermar
 
 The second part is the slug, made by `slugify` from the message: lowercased, stripped of punctuation, and cut to the first few words. The slug is purely cosmetic, there for readability and search engines. Only the `uid` matters for lookup, which lets us do a neat trick later: if the slug in the URL is stale or missing, we redirect to the correct one.
 
+![Because lookup uses only the uid, a stale or missing slug can be repaired with a redirect instead of a 404.](images/5.8-scene4-img3.png)
+
 [Save the file](https://fmze.co/fftq-5.8.2).
 
 Post images keep their aspect ratio but are scaled to a fixed height so several could sit side by side neatly. That's a different transform than the square crop we used for avatars, so let's add it to `utils/imaging.py`:

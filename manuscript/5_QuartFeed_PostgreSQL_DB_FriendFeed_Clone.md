@@ -1757,7 +1757,19 @@ async def test_profile_shows_relationship_state(create_test_app):
     assert "Unfollow" in str(body)
 ```
 
-Notice we ask `create_test_app` for the client ourselves with `create_test_app.test_client()`, once for alice and once for bob, instead of using the shared `create_test_client` fixture. Now each user has a real, separate session, which is what following needs. The story reads cleanly: alice follows bob and we check the `relationship` table has exactly one row, alice unfollows and the row is gone, and an anonymous follow bounces to `/login`. The last test reads the page the way a visitor would: before following, alice sees a "Follow" button on bob's profile, and after following that same button reads "Unfollow".
+We start with the imports and a small helper. The helper registers a user and then logs them in, for whichever client we hand it, so each test below reads as a story instead of a pile of form posts.
+
+Notice we ask `create_test_app` for the client ourselves with `create_test_app.test_client()`, once for alice and once for bob, instead of using the shared `create_test_client` fixture. Now each user has a real, separate session, which is what following needs.
+
+The story reads cleanly. Alice follows bob, we open an app context, and we look straight at the database instead of trusting the page: the `relationship` table has exactly one row.
+
+Then alice unfollows, we run that very same query again, and this time it comes back empty. The row is gone, which is the whole point of the unfollow route.
+
+The second test checks the guard. An anonymous follow, with nobody logged in, bounces to `/login`, so we assert on the redirect and on the location header it sends back.
+
+The last test reads the page the way a visitor would. We set alice and bob up again, and then, before any following has happened, alice loads bob's profile and sees a "Follow" button waiting for her.
+
+Then alice follows bob, loads that same profile again, and the very same button now reads "Unfollow". The page told us the truth both times.
 
 [Save the file](https://fmze.co/fftq-5.7.5).
 

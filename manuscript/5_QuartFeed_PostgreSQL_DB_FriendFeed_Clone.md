@@ -1781,7 +1781,7 @@ Run the whole suite with `pytest` and watch it come up green. We started from th
 
 It's time for the content itself. In this lesson we'll build posts: a message, an optional image, and a permanent, shareable address for each one. That address, the permalink, is worth getting right, so we'll design it carefully.
 
-Let's start with the model. Create a `post` folder with an empty `__init__.py`, and a `models.py` inside:
+Let's start with the model. We already have a `post` package, holding the placeholder home view we wrote back when we built the login flow. Add a `models.py` next to it:
 
 {lang=python,line-numbers=on}
 ```
@@ -1816,7 +1816,7 @@ Two columns are new in spirit. The `created` column has a `server_default` of `f
 
 Posts can also carry images, and we want to be ready for more than one someday, so images get their own table. Add it below `post_table`:
 
-{lang=python,line-numbers=on,starting-line-number=27}
+{lang=python,line-numbers=on,starting-line-number=25}
 ```
 post_image_table = Table(
     "post_image",
@@ -1833,7 +1833,7 @@ Each row is one image belonging to a post, with the same timestamp `image_id` tr
 
 [Save the file](https://fmze.co/fftq-5.8.1).
 
-Now those two URL pieces, the `uid` and the slug. Let's add both helpers to `utils/helpers.py`:
+Now those two URL pieces, the `uid` and the slug. Both are small pure functions, so they belong in `utils/helpers.py`. Three new imports first, at the very top of the file:
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -1842,7 +1842,9 @@ import secrets
 import string
 ```
 
-{lang=python,line-numbers=on,starting-line-number=40}
+And the helpers themselves, at the bottom:
+
+{lang=python,line-numbers=on,starting-line-number=42}
 ```
 _UID_ALPHABET = string.ascii_lowercase + string.digits
 
@@ -1867,7 +1869,7 @@ The second part is the slug, made by `slugify` from the message: lowercased, str
 
 Post images keep their aspect ratio but are scaled to a fixed height so several could sit side by side neatly. That's a different transform than the square crop we used for avatars, so let's add it to `utils/imaging.py`:
 
-{lang=python,line-numbers=on,starting-line-number=38}
+{lang=python,line-numbers=on,starting-line-number=41}
 ```
 def image_height_transform(
     blob: bytes,
@@ -1889,6 +1891,19 @@ def image_height_transform(
 It's the same Wand pattern as before, but instead of cropping to a square, `transform(resize="x200")` scales the image to two hundred pixels tall and keeps the width proportional. It returns both the image id and the resulting width, which we store so the layout knows how much room to leave.
 
 [Save the file](https://fmze.co/fftq-5.8.3).
+
+Those files land in `static/uploads/posts/`, named `{post_id}.{image_id}.xlg.png`, and the templates are going to need their URL. That's one more helper, at the bottom of `utils/helpers.py`:
+
+{lang=python,line-numbers=on,starting-line-number=57}
+```
+def post_image_url(post_id: int, image_id: int) -> str:
+    """URL for a post image, written by image_height_transform."""
+    return f"{current_app.config['IMAGE_URL']}/posts/{post_id}.{image_id}.xlg.png"
+```
+
+It's `image_url` for posts: the same `IMAGE_URL` config, a different folder, and no default to fall back on, because a post without an image simply doesn't render one.
+
+[Save the file](https://fmze.co/fftq-5.8.4).
 
 The post form is short. Create `post/forms.py`:
 
@@ -1912,14 +1927,14 @@ class PostForm(QuartForm):
 
 A required message limited to five hundred characters, and an optional image with the same image-only validation we used for avatars. Nothing new here, which is the point: once you know quart-wtforms, every form looks like this.
 
-[Save the file](https://fmze.co/fftq-5.8.4).
+[Save the file](https://fmze.co/fftq-5.8.5).
 
-Now the views. Create `post/views.py` with the imports and blueprint:
+Now the views. `post/views.py` currently holds nothing but that placeholder home view, so we're going to replace it outright. Start with the imports and the blueprint:
 
 {lang=python,line-numbers=on}
 ```
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from quart import (
     Blueprint,
@@ -1932,10 +1947,10 @@ from quart import (
 )
 from sqlalchemy import insert, select
 
-from utils.helpers import generate_uid, login_required, post_image_url, slugify
-from utils.imaging import image_height_transform
 from post.forms import PostForm
 from post.models import post_image_table, post_table
+from utils.helpers import generate_uid, login_required, post_image_url, slugify
+from utils.imaging import image_height_transform
 
 post_app = Blueprint("post_app", __name__)
 
@@ -1944,11 +1959,32 @@ def _posts_dir() -> Path:
     return Path(current_app.config["UPLOADS_FOLDER"]) / "posts"
 ```
 
-We import our new helpers and the fixed-height transform, and add a `_posts_dir` helper pointing at where post images are stored, mirroring the avatars folder. Add a small `post_image_url` helper to `utils/helpers.py` too, building the URL for a post image the same way `image_url` does for avatars.
+We pull in our new helpers and the fixed-height transform, and add a `_posts_dir` helper pointing at where post images are stored, mirroring the avatars folder.
+
+A post's images live in their own table, so loading them is its own small query. Add it underneath:
+
+{lang=python,line-numbers=on,starting-line-number=27}
+```
+async def _post_images(conn: Any, post_id: int) -> List[Dict[str, Any]]:
+    """Images attached to a post, ordered for side-by-side display."""
+    rows = (
+        await conn.execute(
+            select(post_image_table.c.image_id, post_image_table.c.width)
+            .where(post_image_table.c.post_id == post_id)
+            .order_by(post_image_table.c.position.asc())
+        )
+    ).fetchall()
+    return [
+        {"url": post_image_url(post_id, row.image_id), "width": row.width}
+        for row in rows
+    ]
+```
+
+It hands back a list of ready-to-render dicts, one per image, in `position` order. Both of the pages below use it.
 
 Now the home page, which shows the post form. For now it just lists your own recent posts so we have something to look at; next lesson it becomes the real feed:
 
-{lang=python,line-numbers=on,starting-line-number=24}
+{lang=python,line-numbers=on,starting-line-number=42}
 ```
 @post_app.route("/")
 async def home():
@@ -1958,7 +1994,7 @@ async def home():
     form = await PostForm.create_form()
     engine = current_app.dbc  # type: ignore
     async with engine.begin() as conn:
-        posts = (
+        rows = (
             await conn.execute(
                 select(post_table)
                 .where(post_table.c.user_id == session["user_id"])
@@ -1967,14 +2003,29 @@ async def home():
             )
         ).fetchall()
 
+        posts = []
+        for row in rows:
+            posts.append(
+                {
+                    "message": row.message,
+                    "created": row.created,
+                    "images": await _post_images(conn, row.id),
+                    "permalink": url_for(
+                        "post_app.detail", uid=row.uid, slug=slugify(row.message)
+                    ),
+                }
+            )
+
     return await render_template("post/home.html", posts=posts, form=form)
 ```
 
-If nobody's logged in we send them to login. Otherwise we build an empty `PostForm` for the "what's on your mind" box and load the current user's ten most recent posts, newest first. That's a placeholder for the feed we'll build next.
+If nobody's logged in we send them to login. Otherwise we build an empty `PostForm` for the "what's on your mind" box and load the current user's ten most recent posts, newest first.
+
+Then, for each row, we assemble exactly what the template needs: the message, the timestamp, the post's images, and its permalink. Notice we build that permalink here, with `url_for` and `slugify`, rather than in the template. The page shouldn't have to know how a permalink is spelled.
 
 Now the view that actually creates a post:
 
-{lang=python,line-numbers=on,starting-line-number=43}
+{lang=python,line-numbers=on,starting-line-number=75}
 ```
 @post_app.route("/post", methods=["POST"])
 @login_required
@@ -2012,7 +2063,7 @@ If a photo was uploaded, we run it through `image_height_transform` and record a
 
 Finally, the permalink page. This is where that `uid` and slug design pays off:
 
-{lang=python,line-numbers=on,starting-line-number=70}
+{lang=python,line-numbers=on,starting-line-number=105}
 ```
 @post_app.route("/post/<uid>/")
 @post_app.route("/post/<uid>/<slug>")
@@ -2020,30 +2071,150 @@ Finally, the permalink page. This is where that `uid` and slug design pays off:
 async def detail(uid: str, slug: Optional[str] = None):
     engine = current_app.dbc  # type: ignore
     async with engine.begin() as conn:
-        post = (
+        row = (
             await conn.execute(select(post_table).where(post_table.c.uid == uid))
         ).fetchone()
 
-    if post is None:
-        abort(404)
+        if row is None:
+            abort(404)
 
-    canonical_slug = slugify(post.message)
+        post = {
+            "uid": row.uid,
+            "message": row.message,
+            "created": row.created,
+            "images": await _post_images(conn, row.id),
+        }
+
+    canonical_slug = slugify(post["message"])
     if slug != canonical_slug:
         return redirect(
             url_for("post_app.detail", uid=uid, slug=canonical_slug), code=301
         )
 
-    form = await PostForm.create_form()
-    return await render_template("post/detail.html", post=post, form=form)
+    return await render_template("post/detail.html", post=post)
 ```
 
-We look the post up by its `uid` alone, ignoring the slug, and 404 if there's no such post. Then we compute what the slug should be from the current message. If the URL's slug doesn't match, we issue a `301` redirect to the canonical URL.
+Two routes point at the same function, one with a slug and one without, and the slug argument defaults to `None`. We look the post up by its `uid` alone, ignoring the slug entirely, and 404 if there's no such post. Then we compute what the slug should be from the current message. If the URL's slug doesn't match, we issue a `301` redirect to the canonical URL.
 
 That redirect is the trick. It means every post has exactly one correct address that search engines will index, no matter what slug someone typed or linked. A stale slug still finds the post and then bounces to the right URL.
 
-[Save the file](https://fmze.co/fftq-5.8.5).
+[Save the file](https://fmze.co/fftq-5.8.6).
 
-Register the blueprint in `application.py` and import the two new models in `migrations/env.py`, the same two-step dance as before. Then create the home and detail templates with the post form and a simple card for each post, and run the migration for the `post` and `post_image` tables:
+The blueprint is already registered in `application.py`, from back when the placeholder home page needed it, so there's nothing to do there. Alembic is a different story: it only sees the tables that something imports, so add the two new models to `migrations/env.py`:
+
+{lang=python,line-numbers=on,starting-line-number=18}
+```
+from post.models import post_table, post_image_table  # noqa: F401
+```
+
+[Save the file](https://fmze.co/fftq-5.8.7).
+
+Two templates left, and we'll do the permalink page first so those timestamp links have somewhere to land. It's the simpler of the two: the post card on its own, with no form wrapped around it, plus a way back. Create `templates/post/detail.html`:
+
+{lang=html,line-numbers=on}
+```
+{% extends "base.html" %}
+
+{% block title %}Post{% endblock %}
+
+{% block content %}
+
+{% include "navbar.html" %}
+
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <p class="mb-1">{{ post.message }}</p>
+                {% if post.images %}
+                <div class="d-flex gap-2 mb-2">
+                    {% for img in post.images %}
+                    <img src="{{ img.url }}" alt="post image"
+                        style="height: 200px; width: auto; border-radius: 6px;">
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
+            </div>
+        </div>
+
+        <a href="{{ url_for('post_app.home') }}">&larr; Back home</a>
+
+    </div>
+</div>
+
+{% endblock %}
+```
+
+Here the timestamp is plain text rather than a link, because on the permalink page you're already at the address it would point to.
+
+[Save the file](https://fmze.co/fftq-5.8.8).
+
+Now the home page. `templates/post/home.html` is still the "the friend feed lands here" placeholder, so replace its inner column with the post form and a card per post:
+
+{lang=html,line-numbers=on}
+```
+{% extends "base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+
+{% include "navbar.html" %}
+
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+
+        {% for message in get_flashed_messages() %}
+        <div class="alert alert-success">{{ message }}</div>
+        {% endfor %}
+
+        {% from "_formhelpers.html" import render_field %}
+
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('post_app.create_post') }}" enctype="multipart/form-data">
+                    {{ render_field(form.message) }}
+                    {{ render_field(form.image) }}
+                    {{ form.csrf_token }}
+                    <button type="submit" class="btn btn-primary">Post</button>
+                </form>
+            </div>
+        </div>
+
+        {% for post in posts %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <p class="mb-1">{{ post.message }}</p>
+                {% if post.images %}
+                <div class="d-flex gap-2 mb-2">
+                    {% for img in post.images %}
+                    <img src="{{ img.url }}" alt="post image"
+                        style="height: 200px; width: auto; border-radius: 6px;">
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <a href="{{ post.permalink }}" class="small text-muted">
+                    {{ post.created.strftime('%b %d, %Y %H:%M') }}
+                </a>
+            </div>
+        </div>
+        {% else %}
+        <p class="text-muted">Nothing here yet &mdash; write your first post.</p>
+        {% endfor %}
+
+    </div>
+</div>
+
+{% endblock %}
+```
+
+The form posts to `create_post` and carries `enctype="multipart/form-data"`, which is what lets a file ride along with the text, and `render_field` is the same macro we've used since the registration form. Each card prints the message, then any images at their natural width and a fixed two-hundred-pixel height, then the timestamp, which is the link to the post's permalink. That `{% else %}` on the `for` loop is a Jinja convenience: it renders when the list is empty, so a brand-new account sees a nudge instead of a blank page.
+
+[Save the file](https://fmze.co/fftq-5.8.9).
+
+That's everything the app needs. Now build the image and run the migration for the two new tables:
 
 {lang=bash,line-numbers=off}
 ```
@@ -2052,7 +2223,7 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "create 
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Restart the app, write a post, attach a photo. It shows up on your home page with its image scaled to a tidy height, and clicking its timestamp takes you to its permalink. We have content. Now let's make it flow between users.
+Restart the app, write a post, attach a photo. It shows up on your home page with its image scaled to a tidy height, and clicking its timestamp takes you to its permalink. Try mangling the slug in the address bar: you'll land right back on the canonical URL, which is exactly what we designed for. We have content. Now let's make it flow between users.
 
 ## The Feed: Fan-out on Write <!-- 5.9 -->
 

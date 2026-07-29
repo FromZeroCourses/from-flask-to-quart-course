@@ -1875,6 +1875,8 @@ The second part is the slug, made by `slugify` from the message: lowercased, str
 
 Post images keep their aspect ratio but are scaled to a fixed height so several could sit side by side neatly. That's a different transform than the square crop we used for avatars, so let's add it to `utils/imaging.py`:
 
+![Avatars are center-cropped to a square, while post images are scaled to a fixed height, so their widths vary and they still line up side by side.](images/5.8-scene5-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=41}
 ```
 def image_height_transform(

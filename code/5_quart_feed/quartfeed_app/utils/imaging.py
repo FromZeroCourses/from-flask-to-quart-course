@@ -36,3 +36,20 @@ def thumbnail_process(
             img.format = "png"
             img.save(filename=str(dest / f"{content_id}.{image_id}.{name}.png"))
     return image_id
+
+
+def image_height_transform(
+    blob: bytes,
+    dest_dir: Union[str, Path],
+    content_id: Union[str, int],
+    height: int = 200,
+) -> Tuple[int, int]:
+    """Scale ``blob`` to a fixed ``height`` (aspect kept). Returns (image_id, width)."""
+    image_id = int(time.time())
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    with Image(blob=blob) as img:
+        img.transform(resize=f"x{height}")
+        img.format = "png"
+        img.save(filename=str(dest / f"{content_id}.{image_id}.xlg.png"))
+        return image_id, img.width

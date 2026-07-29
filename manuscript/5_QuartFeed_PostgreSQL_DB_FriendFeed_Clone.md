@@ -2119,6 +2119,8 @@ from post.models import post_table, post_image_table  # noqa: F401
 
 Two templates left, and we'll do the permalink page first so those timestamp links have somewhere to land. It's the simpler of the two: the post card on its own, with no form wrapped around it, plus a way back.
 
+![The permalink page is one card plus a way back, with no post form wrapped around it.](images/5.8-scene14-img2.png)
+
 ![A linked timestamp in the feed needs a page to land on, and that page is the permalink.](images/5.8-scene14-img1.png)
 
 {lang=html,line-numbers=on}

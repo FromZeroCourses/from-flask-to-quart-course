@@ -53,3 +53,7 @@ def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
     slug = "-".join(words[:max_words])[:max_len].strip("-")
     return slug or "post"
 
+
+def post_image_url(post_id: int, image_id: int) -> str:
+    """URL for a post image, written by image_height_transform."""
+    return f"{current_app.config['IMAGE_URL']}/posts/{post_id}.{image_id}.xlg.png"

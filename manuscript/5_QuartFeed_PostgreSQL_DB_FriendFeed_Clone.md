@@ -2117,7 +2117,7 @@ from post.models import post_table, post_image_table  # noqa: F401
 
 [Save the file](https://fmze.co/fftq-5.8.7).
 
-Two templates left, and we'll do the permalink page first so those timestamp links have somewhere to land. It's the simpler of the two: the post card on its own, with no form wrapped around it, plus a way back. Create `templates/post/detail.html`:
+Two templates left, and we'll do the permalink page first so those timestamp links have somewhere to land. It's the simpler of the two: the post card on its own, with no form wrapped around it, plus a way back.
 
 {lang=html,line-numbers=on}
 ```
@@ -2154,6 +2154,8 @@ Two templates left, and we'll do the permalink page first so those timestamp lin
 
 {% endblock %}
 ```
+
+Create `templates/post/detail.html`. It extends `base.html`, includes the navbar, and then draws a single card holding the post's message and any images attached to it:
 
 Here the timestamp is plain text rather than a link, because on the permalink page you're already at the address it would point to.
 

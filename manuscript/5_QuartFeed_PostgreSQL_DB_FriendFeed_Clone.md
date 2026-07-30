@@ -1967,7 +1967,7 @@ def _posts_dir() -> Path:
 
 We pull in our new helpers and the fixed-height transform, and add a `_posts_dir` helper pointing at where post images are stored, mirroring the avatars folder.
 
-A post's images live in their own table, so loading them is its own small query. Add it underneath:
+Two small helpers do the groundwork here. The first one points at the folder where a post's uploads were written, so nothing else in the module has to rebuild that path by hand. A post's images live in their own table, so loading them is its own small query. Add both underneath:
 
 {lang=python,line-numbers=on,starting-line-number=27}
 ```

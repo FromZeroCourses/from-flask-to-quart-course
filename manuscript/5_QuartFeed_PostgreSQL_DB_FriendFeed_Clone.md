@@ -2226,7 +2226,7 @@ The form posts to `create_post` and carries `enctype="multipart/form-data"`, whi
 
 [Save the file](https://fmze.co/fftq-5.8.9).
 
-That's everything the app needs. Now build the image and run the migration for the two new tables:
+Restart the app, write a post, attach a photo. It shows up on your home page with its image scaled to a tidy height, and clicking its timestamp takes you to its permalink. Notice the slug sitting after the post id: misspell it, or drop it entirely, and the app answers with a 301 straight back to this canonical URL, which is exactly what we designed for. We have content. Now let's make it flow between users.
 
 {lang=bash,line-numbers=off}
 ```

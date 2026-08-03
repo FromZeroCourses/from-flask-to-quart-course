@@ -2226,7 +2226,7 @@ The form posts to `create_post` and carries `enctype="multipart/form-data"`, whi
 
 [Save the file](https://fmze.co/fftq-5.8.9).
 
-Restart the app, write a post, attach a photo. It shows up on your home page with its image scaled to a tidy height, and clicking its timestamp takes you to its permalink. Notice the slug sitting after the post id: misspell it, or drop it entirely, and the app answers with a 301 straight back to this canonical URL, which is exactly what we designed for. We have content. Now let's make it flow between users.
+Restart the app.
 
 {lang=bash,line-numbers=off}
 ```
@@ -2235,7 +2235,7 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "create 
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Restart the app, write a post, attach a photo. It shows up on your home page with its image scaled to a tidy height, and clicking its timestamp takes you to its permalink. Try mangling the slug in the address bar: you'll land right back on the canonical URL, which is exactly what we designed for. We have content. Now let's make it flow between users.
+Write a post, attach a photo. It shows up on your home page with its image scaled to a tidy height, and clicking its timestamp takes you to its permalink. Notice the slug sitting after the post id: misspell it, or drop it entirely, and the app answers with a 301 straight back to this canonical URL, which is exactly what we designed for. We have content. Now let's make it flow between users.
 
 ## The Feed: Fan-out on Write <!-- 5.9 -->
 

@@ -2226,11 +2226,7 @@ The form posts to `create_post` and carries `enctype="multipart/form-data"`, whi
 
 [Save the file](https://fmze.co/fftq-5.8.9).
 
-Now let's get the database caught up with the models we just wrote. Start by rebuilding the web image, so the container is running our new code.
-
-Then ask Alembic to compare the models against the database and write the migration for us. It finds two tables it has never seen before and generates a revision that creates them.
-
-And apply it. The upgrade runs that new revision, the post and post image tables land in Postgres, and the app is ready to take its first post.
+Now let's get the database caught up with the models we just wrote. Rebuild the web image so the container is running our new code, then ask Alembic to compare the models against the database and write the migration for us. It finds two tables it has never seen before and generates a revision that creates them, and the upgrade applies it: the post and post image tables land in Postgres, and the app is ready to take its first post.
 
 {lang=bash,line-numbers=off}
 ```

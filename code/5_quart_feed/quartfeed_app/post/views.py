@@ -106,6 +106,22 @@ async def home():
     return await render_template("post/home.html", posts=posts, form=form)
 
 
+@post_app.route("/feed")
+@login_required
+async def feed():
+    """One page of feed cards for infinite scroll. Empty when exhausted."""
+    try:
+        offset = int(request.args.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    engine = current_app.dbc  # type: ignore
+    async with engine.begin() as conn:
+        posts = await _load_feed(conn, session["user_id"], offset=offset)
+
+    return await render_template("post/_feed_items.html", posts=posts)
+
+
 @post_app.route("/post", methods=["POST"])
 @login_required
 async def create_post():

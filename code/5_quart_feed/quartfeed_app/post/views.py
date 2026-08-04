@@ -7,14 +7,24 @@ from quart import (
     current_app,
     redirect,
     render_template,
+    request,
     session,
     url_for,
 )
 from sqlalchemy import insert, select
 
 from post.forms import PostForm
-from post.models import post_image_table, post_table
-from utils.helpers import generate_uid, login_required, post_image_url, slugify
+from post.models import feed_table, post_image_table, post_table
+from relationship.views import followers
+from user.models import user_table
+from utils.feed_ops import fan_out_post
+from utils.helpers import (
+    generate_uid,
+    image_url,
+    login_required,
+    post_image_url,
+    slugify,
+)
 from utils.imaging import image_height_transform
 
 post_app = Blueprint("post_app", __name__)
@@ -88,6 +98,10 @@ async def create_post():
                 )
             )
             post_id = result.inserted_primary_key[0]
+
+            recipient_ids = set(await followers(conn, session["user_id"]))
+            recipient_ids.add(session["user_id"])
+            await fan_out_post(conn, post_id, recipient_ids)
 
             if form.image.data:
                 image_id, width = image_height_transform(

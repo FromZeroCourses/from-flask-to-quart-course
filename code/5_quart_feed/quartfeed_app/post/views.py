@@ -49,6 +49,50 @@ async def _post_images(conn: Any, post_id: int) -> List[Dict[str, Any]]:
     ]
 
 
+async def _load_feed(
+    conn: Any, user_id: int, offset: int = 0, limit: int = 10
+) -> List[Dict[str, Any]]:
+    """One page of a user's feed, newest activity first."""
+    feed_query = (
+        select(
+            post_table.c.id.label("post_id"),
+            post_table.c.uid,
+            post_table.c.message,
+            post_table.c.created,
+            user_table.c.id.label("author_id"),
+            user_table.c.username.label("author_username"),
+            user_table.c.image.label("author_image"),
+        )
+        .select_from(
+            feed_table.join(post_table, feed_table.c.post_id == post_table.c.id)
+            .join(user_table, post_table.c.user_id == user_table.c.id)
+        )
+        .where(feed_table.c.user_id == user_id)
+        .order_by(feed_table.c.updated.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = (await conn.execute(feed_query)).fetchall()
+
+    posts = []
+    for row in rows:
+        posts.append(
+            {
+                "post_id": row.post_id,
+                "message": row.message,
+                "created": row.created,
+                "author_username": row.author_username,
+                "avatar_url": image_url(row.author_id, row.author_image, "sm"),
+                "images": await _post_images(conn, row.post_id),
+                "permalink": url_for(
+                    "post_app.detail", uid=row.uid, slug=slugify(row.message)
+                ),
+            }
+        )
+
+    return posts
+
+
 @post_app.route("/")
 async def home():
     if session.get("username") is None:
@@ -57,27 +101,7 @@ async def home():
     form = await PostForm.create_form()
     engine = current_app.dbc  # type: ignore
     async with engine.begin() as conn:
-        rows = (
-            await conn.execute(
-                select(post_table)
-                .where(post_table.c.user_id == session["user_id"])
-                .order_by(post_table.c.created.desc())
-                .limit(10)
-            )
-        ).fetchall()
-
-        posts = []
-        for row in rows:
-            posts.append(
-                {
-                    "message": row.message,
-                    "created": row.created,
-                    "images": await _post_images(conn, row.id),
-                    "permalink": url_for(
-                        "post_app.detail", uid=row.uid, slug=slugify(row.message)
-                    ),
-                }
-            )
+        posts = await _load_feed(conn, session["user_id"])
 
     return await render_template("post/home.html", posts=posts, form=form)
 

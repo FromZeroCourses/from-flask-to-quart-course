@@ -2247,7 +2247,7 @@ The approach real feeds use is the opposite: fan-out on write. The moment someon
 
 So we need a `feed` table. It's a materialized, per-user timeline: each row says "this post belongs in this user's feed". Add it to `post/models.py`, between `post_table` and `post_image_table`:
 
-{lang=python,line-numbers=on,starting-line-number=27}
+{lang=python,line-numbers=on,starting-line-number=25}
 ```
 feed_table = Table(
     "feed",
@@ -2300,7 +2300,7 @@ Now wire it into the app. `post/views.py` needs a handful of new names, so let's
 
 Then the local imports, which pick up the `feed` table, the `followers` helper, the user table for the join, the fan-out function, and `image_url` for the post author's avatar:
 
-{lang=python,line-numbers=on,starting-line-number=15}
+{lang=python,line-numbers=on,starting-line-number=16}
 ```
 from post.forms import PostForm
 from post.models import feed_table, post_image_table, post_table
@@ -2319,7 +2319,7 @@ from utils.imaging import image_height_transform
 
 With those in place, fan the post out. Inside `create_post`, right after we insert the post and read back its `post_id`:
 
-{lang=python,line-numbers=on,starting-line-number=96}
+{lang=python,line-numbers=on,starting-line-number=102}
 ```
             recipient_ids = set(await followers(conn, session["user_id"]))
             recipient_ids.add(session["user_id"])
@@ -2332,7 +2332,7 @@ Remember the `followers` helper we wrote back in the relationship lesson, and sa
 
 That's the write side done. Now the read side: the home page has to stop querying your own posts and start reading your feed rows. We'll need that query in two places, the home page and the infinite-scroll endpoint we're about to write, so it goes straight into its own helper. Add `_load_feed` above the `home` view:
 
-{lang=python,line-numbers=on,starting-line-number=46}
+{lang=python,line-numbers=on,starting-line-number=52}
 ```
 async def _load_feed(
     conn: Any, user_id: int, offset: int = 0, limit: int = 10
@@ -2364,7 +2364,7 @@ This query walks three tables. We start from `feed_table` and keep only the rows
 
 Rows come back flat, so let's shape each one into the dictionary the template wants:
 
-{lang=python,line-numbers=on,starting-line-number=71}
+{lang=python,line-numbers=on,starting-line-number=77}
 ```
     posts = []
     for row in rows:
@@ -2389,7 +2389,7 @@ Two of those keys do real work. `avatar_url` runs the author's stored image thro
 
 Now `home` gets much shorter. Replace its whole query with one call:
 
-{lang=python,line-numbers=on,starting-line-number=97}
+{lang=python,line-numbers=on,starting-line-number=103}
 ```
     async with engine.begin() as conn:
         posts = await _load_feed(conn, session["user_id"])
@@ -2399,7 +2399,7 @@ Now `home` gets much shorter. Replace its whole query with one call:
 
 One page of ten posts isn't enough for an active feed, so let's add infinite scroll: when you reach the bottom, load the next page. That means an endpoint that returns just the next batch of post cards, no page furniture around them. Add a `feed` view right below `home`:
 
-{lang=python,line-numbers=on,starting-line-number=103}
+{lang=python,line-numbers=on,starting-line-number=109}
 ```
 @post_app.route("/feed")
 @login_required

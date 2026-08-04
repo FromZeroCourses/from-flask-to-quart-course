@@ -2245,7 +2245,7 @@ There are two ways to build a feed. The obvious one is to query it on read: ever
 
 The approach real feeds use is the opposite: fan-out on write. The moment someone posts, we immediately write one row into a `feed` table for each of their followers. Reading your feed then becomes a simple, fast lookup of your own rows. We do a little more work when someone posts, which is rare, to make reading, which is constant, cheap. That's the trade we want.
 
-So we need a `feed` table. It's a materialized, per-user timeline: each row says "this post belongs in this user's feed". Add it to `post/models.py` below `post_table`:
+So we need a `feed` table. It's a materialized, per-user timeline: each row says "this post belongs in this user's feed". Add it to `post/models.py`, between `post_table` and `post_image_table`:
 
 {lang=python,line-numbers=on,starting-line-number=27}
 ```
@@ -2261,7 +2261,9 @@ feed_table = Table(
 
 The key thing to understand is `user_id` here is not the author. It's the feed's owner, the recipient. One post by a popular user creates many feed rows, one per follower, each with that follower as `user_id`. The `updated` column is what we sort a feed by, so the freshest activity floats to the top.
 
-[Save the file](https://fmze.co/fftq-5.9.1) and now let's write the fan-out logic in its own file. Create `utils/feed_ops.py`:
+[Save the file](https://fmze.co/fftq-5.9.1)
+
+Now let's write the fan-out logic in its own file. Create `utils/feed_ops.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -2280,26 +2282,44 @@ async def add_to_feed(conn, user_id: int, post_id: int) -> None:
 
 
 async def fan_out_post(conn, post_id: int, recipient_ids: Iterable[int]) -> None:
-    """A brand-new post lands directly in the author's + followers' feeds."""
+    """A brand-new post lands directly in the author's and followers' feeds."""
     for user_id in set(recipient_ids):
         await add_to_feed(conn, user_id, post_id)
 ```
 
 `add_to_feed` writes a single feed row, and `fan_out_post` loops over a set of recipients and writes one for each. We wrap the recipients in `set()` so nobody gets a duplicate row. This is the whole fan-out engine, and we'll extend it in a couple of lessons when comments start bubbling posts around.
 
-[Save the file](https://fmze.co/fftq-5.9.2).
+[Save the file](https://fmze.co/fftq-5.9.2)
 
-Now wire it into `create_post`. Import the helpers at the top of `post/views.py`:
+Now wire it into the app. `post/views.py` needs a handful of new names, so let's do the imports first. We need `request` from Quart to read the pagination offset later, so add it to the import list:
+
+{lang=python,line-numbers=on,starting-line-number=10}
+```
+    request,
+```
+
+Then the local imports, which pick up the `feed` table, the `followers` helper, the user table for the join, the fan-out function, and `image_url` for the post author's avatar:
 
 {lang=python,line-numbers=on,starting-line-number=15}
 ```
-from utils.feed_ops import fan_out_post
+from post.forms import PostForm
+from post.models import feed_table, post_image_table, post_table
 from relationship.views import followers
+from user.models import user_table
+from utils.feed_ops import fan_out_post
+from utils.helpers import (
+    generate_uid,
+    image_url,
+    login_required,
+    post_image_url,
+    slugify,
+)
+from utils.imaging import image_height_transform
 ```
 
-Then, right after we insert the post and get its `post_id`, fan it out:
+With those in place, fan the post out. Inside `create_post`, right after we insert the post and read back its `post_id`:
 
-{lang=python,line-numbers=on,starting-line-number=58}
+{lang=python,line-numbers=on,starting-line-number=96}
 ```
             recipient_ids = set(await followers(conn, session["user_id"]))
             recipient_ids.add(session["user_id"])
@@ -2308,44 +2328,83 @@ Then, right after we insert the post and get its `post_id`, fan it out:
 
 Remember the `followers` helper we wrote back in the relationship lesson, and said to keep in mind? This is the moment. We fetch everyone who follows the author, add the author themselves so your own posts show in your own feed, and fan the post out to all of them. Every one of those users now has a feed row for this post.
 
-[Save the file](https://fmze.co/fftq-5.9.3).
+[Save the file](https://fmze.co/fftq-5.9.3)
 
-Now the home page reads from the feed instead of the author's own posts. This query joins three tables, so let's replace the `home` view's query:
+That's the write side done. Now the read side: the home page has to stop querying your own posts and start reading your feed rows. We'll need that query in two places, the home page and the infinite-scroll endpoint we're about to write, so it goes straight into its own helper. Add `_load_feed` above the `home` view:
 
-{lang=python,line-numbers=on,starting-line-number=30}
+{lang=python,line-numbers=on,starting-line-number=46}
 ```
-        feed_query = (
-            select(
-                post_table.c.id.label("post_id"),
-                post_table.c.uid,
-                post_table.c.message,
-                post_table.c.created,
-                user_table.c.username.label("author_username"),
-                user_table.c.image.label("author_image"),
-                user_table.c.id.label("author_id"),
-            )
-            .select_from(
-                feed_table.join(post_table, feed_table.c.post_id == post_table.c.id)
-                .join(user_table, post_table.c.user_id == user_table.c.id)
-            )
-            .where(feed_table.c.user_id == session["user_id"])
-            .order_by(feed_table.c.updated.desc())
-            .limit(10)
+async def _load_feed(
+    conn: Any, user_id: int, offset: int = 0, limit: int = 10
+) -> List[Dict[str, Any]]:
+    """One page of a user's feed, newest activity first."""
+    feed_query = (
+        select(
+            post_table.c.id.label("post_id"),
+            post_table.c.uid,
+            post_table.c.message,
+            post_table.c.created,
+            user_table.c.id.label("author_id"),
+            user_table.c.username.label("author_username"),
+            user_table.c.image.label("author_image"),
         )
-        posts = (await conn.execute(feed_query)).fetchall()
+        .select_from(
+            feed_table.join(post_table, feed_table.c.post_id == post_table.c.id)
+            .join(user_table, post_table.c.user_id == user_table.c.id)
+        )
+        .where(feed_table.c.user_id == user_id)
+        .order_by(feed_table.c.updated.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = (await conn.execute(feed_query)).fetchall()
 ```
 
-We start from `feed_table` and keep only the rows where the feed owner is us. Then we join to `post_table` to get each post's content, and join again to `user_table` to get the author's name and avatar. We order by the feed's `updated` column so the newest activity is on top, and take the first ten. Add `user_table` to the imports for the join.
+This query walks three tables. We start from `feed_table` and keep only the rows whose owner is us, which is the cheap lookup the whole design was for. Then we join to `post_table` to get each post's text and permalink id, and join again to `user_table` to get the author's name and avatar, because a feed shows other people's posts and every card has to say who wrote it. We order by the feed's `updated` column so the newest activity is on top, and `limit` with `offset` is what lets us hand out the feed one page at a time.
 
-[Save the file](https://fmze.co/fftq-5.9.4).
+Rows come back flat, so let's shape each one into the dictionary the template wants:
 
-One page of ten posts isn't enough for an active feed, so let's add infinite scroll: when you reach the bottom, load the next page. That means an endpoint that returns just the next batch of post cards. Add a `feed` view:
+{lang=python,line-numbers=on,starting-line-number=71}
+```
+    posts = []
+    for row in rows:
+        posts.append(
+            {
+                "post_id": row.post_id,
+                "message": row.message,
+                "created": row.created,
+                "author_username": row.author_username,
+                "avatar_url": image_url(row.author_id, row.author_image, "sm"),
+                "images": await _post_images(conn, row.post_id),
+                "permalink": url_for(
+                    "post_app.detail", uid=row.uid, slug=slugify(row.message)
+                ),
+            }
+        )
 
-{lang=python,line-numbers=on,starting-line-number=52}
+    return posts
+```
+
+Two of those keys do real work. `avatar_url` runs the author's stored image through the same `image_url` helper the profile page uses, asking for the small size, and it falls back to the default avatar for anyone who never uploaded one. `images` reuses `_post_images`, the helper we wrote for attachments last lesson, so a photo posted by someone you follow shows up in your feed exactly like it does on their own page.
+
+Now `home` gets much shorter. Replace its whole query with one call:
+
+{lang=python,line-numbers=on,starting-line-number=97}
+```
+    async with engine.begin() as conn:
+        posts = await _load_feed(conn, session["user_id"])
+```
+
+[Save the file](https://fmze.co/fftq-5.9.4)
+
+One page of ten posts isn't enough for an active feed, so let's add infinite scroll: when you reach the bottom, load the next page. That means an endpoint that returns just the next batch of post cards, no page furniture around them. Add a `feed` view right below `home`:
+
+{lang=python,line-numbers=on,starting-line-number=103}
 ```
 @post_app.route("/feed")
 @login_required
 async def feed():
+    """One page of feed cards for infinite scroll. Empty when exhausted."""
     try:
         offset = int(request.args.get("offset", 0))
     except (TypeError, ValueError):
@@ -2358,9 +2417,81 @@ async def feed():
     return await render_template("post/_feed_items.html", posts=posts)
 ```
 
-This takes an `offset` from the query string and returns the next slice of the feed, rendered with a small partial template, `_feed_items.html`, that loops over posts and renders each card. Pull the feed query we just wrote into a shared `_load_feed` helper so both `home` and `feed` use it, differing only by their offset. Add `request` to the imports.
+It reads an `offset` off the query string, defaulting to zero and shrugging off anything that isn't a number, calls the same `_load_feed` the home page uses, and renders a partial template instead of a full page. When the offset runs past the end of the feed, `_load_feed` comes back empty and this endpoint returns an empty string, which is how the browser will know to stop asking.
 
-[Save the file](https://fmze.co/fftq-5.9.5). On the front end, a little script watches for the page bottom and fetches the next offset. Create `static/js/infinite_scroll.js`:
+[Save the file](https://fmze.co/fftq-5.9.5)
+
+Both the home page and that endpoint have to render a post card, and neither of them should own the markup twice. So let's pull the card into a partial of its own. Create `templates/post/_post_card.html`:
+
+{lang=html,line-numbers=on}
+```
+<div class="card mb-3" data-post-id="{{ post.post_id }}">
+    <div class="card-body">
+        <div class="d-flex">
+            <img src="{{ post.avatar_url }}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40"
+                alt="avatar">
+            <div class="flex-grow-1">
+                <a href="{{ url_for('user_app.profile', username=post.author_username) }}"
+                    class="fw-bold">@{{ post.author_username }}</a>
+                <p class="mb-1">{{ post.message }}</p>
+                {% if post.images %}
+                <div class="d-flex gap-2 mb-2">
+                    {% for img in post.images %}
+                    <img src="{{ img.url }}" alt="post image"
+                        style="height: 200px; width: auto; border-radius: 6px;">
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <a href="{{ post.permalink }}" class="small text-muted">
+                    {{ post.created.strftime('%b %d, %Y %H:%M') }}
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+```
+
+It's the card we already had, with the author's avatar and username added in front of the message, because on your own page every post was obviously yours and in a feed it never is. The `data-post-id` attribute looks decorative, but it's the hook the scroll script will count to work out the next offset.
+
+[Save the file](https://fmze.co/fftq-5.9.6)
+
+The endpoint renders a batch of those cards, so it needs one more partial, a loop with nothing else in it. Create `templates/post/_feed_items.html`:
+
+{lang=html,line-numbers=on}
+```
+{% for post in posts %}{% include "post/_post_card.html" %}{% endfor %}
+```
+
+One line, and it's deliberately tight: no whitespace and no wrapper, so when the feed is exhausted this renders to an empty string and the browser can test for that.
+
+[Save the file](https://fmze.co/fftq-5.9.7)
+
+Now the home page uses the same partial, wrapped in the container the script needs. In `templates/post/home.html`, replace the card loop:
+
+{lang=html,line-numbers=on,starting-line-number=29}
+```
+        <div id="feed">
+            {% if posts %}
+            {% include "post/_feed_items.html" %}
+            {% else %}
+            <p class="text-muted">Nothing in your feed yet &mdash; follow some people or write your first post.</p>
+            {% endif %}
+        </div>
+        <div id="feed-sentinel"></div>
+```
+
+The cards now live inside a `#feed` container, which is where new pages get appended, and that empty `#feed-sentinel` underneath is what the browser will watch for: when the sentinel scrolls into view, we're at the bottom. Then load the script, at the end of the file:
+
+{lang=html,line-numbers=on,starting-line-number=43}
+```
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/infinite_scroll.js') }}"></script>
+{% endblock %}
+```
+
+[Save the file](https://fmze.co/fftq-5.9.8)
+
+Last piece, the script itself. Create `static/js/infinite_scroll.js`:
 
 {lang=javascript,line-numbers=on}
 ```
@@ -2369,31 +2500,45 @@ document.addEventListener("DOMContentLoaded", () => {
   const sentinel = document.getElementById("feed-sentinel");
   if (!feed || !sentinel) return;
 
-  let offset = feed.querySelectorAll("[data-post-id]").length;
   let loading = false;
   let done = false;
 
   const observer = new IntersectionObserver(async (entries) => {
     if (!entries[0].isIntersecting || loading || done) return;
     loading = true;
+
+    const offset = feed.querySelectorAll("[data-post-id]").length;
     const res = await fetch(`/feed?offset=${offset}`);
     const html = (await res.text()).trim();
+
     if (!html) {
       done = true;
+      observer.disconnect();
     } else {
       feed.insertAdjacentHTML("beforeend", html);
-      offset = feed.querySelectorAll("[data-post-id]").length;
     }
+
     loading = false;
-  });
+  }, { rootMargin: "200px" });
 
   observer.observe(sentinel);
 });
 ```
 
-We use an `IntersectionObserver`, the browser's efficient way to notice when an element scrolls into view. We watch an empty sentinel element at the bottom of the feed. When it becomes visible, we fetch the next page by offset and append the returned cards. If the server returns nothing, we're at the end and we stop asking.
+We use an `IntersectionObserver`, the browser's efficient way to notice when an element scrolls into view, and we point it at the sentinel. The `rootMargin` of two hundred pixels means it fires a little before the sentinel is actually visible, so the next page is usually there by the time you scroll to it. The offset is simply how many cards are on the page already, which is why every card carries `data-post-id`. The `loading` and `done` flags stop us firing a second request while one is in flight, and stop us asking forever once the server answers with nothing.
 
-[Save the file](https://fmze.co/fftq-5.9.6) and load it from the home template, adding a `<div id="feed-sentinel"></div>` after the feed. Rebuild, run the migration for the `feed` table, then restart. Log in as two accounts, follow one from the other, and post. The post now appears in the follower's home feed, and scrolling loads older posts. The feed works, but you still have to refresh to see new posts. Let's fix that with SSE.
+[Save the file](https://fmze.co/fftq-5.9.9)
+
+Now get the database caught up. Rebuild the web image so the container is running our new code, then ask Alembic to compare the models against the database: it finds the `feed` table it has never seen before, writes the revision, and the upgrade applies it.
+
+{lang=bash,line-numbers=off}
+```
+$ docker compose build web
+$ docker compose run --rm web uv run alembic revision --autogenerate -m "create feed table"
+$ docker compose run --rm web uv run alembic upgrade head
+```
+
+Restart, then try it with two accounts: log in as one, follow the other, and post from the account being followed. The post appears on the follower's home page, above their own posts, with the author's name and avatar on the card. That's fan-out working: the moment the post was written, a feed row was written for every follower, and reading the feed was one cheap lookup. Scroll to the bottom of a busy account and the next ten cards load themselves. The one thing still missing is immediacy, because a post that arrives while you're looking at the page won't show until you reload. That's the last big piece of QuartFeed, and it's coming.
 
 ## Messages and Feed Tests <!-- 5.10 -->
 

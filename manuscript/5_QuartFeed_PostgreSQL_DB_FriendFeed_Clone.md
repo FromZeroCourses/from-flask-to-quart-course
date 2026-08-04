@@ -1887,8 +1887,6 @@ class SnowflakeGenerator:
         )
 ```
 
-![A Snowflake packs a millisecond timestamp, the worker id, and a per-millisecond sequence into one 64-bit integer, so two processes minting ids at the same instant still cannot collide.](images/5.8-scene4-img1.png)
-
 Read `next_id` from the top and every line is defending the same promise. The timestamp is milliseconds counted from an epoch we picked ourselves, the start of 2024, which is what keeps forty-one bits good for about seventy years instead of running out. If the clock has gone backwards, which happens for real when a machine syncs its time, we refuse: minting now could repeat an id we already handed out, and a loud error is enormously better than a silent duplicate. If we're still inside the same millisecond as the last call, the sequence counter advances, giving us four thousand and ninety-six ids per millisecond per worker, and on the rare occasion we exhaust even that, we spin until the clock ticks over rather than wrap around onto ids we've already issued. A new millisecond resets the sequence. Then the three fields are shifted into their slots and combined. The result is that uniqueness is now structural: it holds because of how the number is built, not because we got lucky. The UNIQUE index on the column stays exactly where it is, but it has been demoted from being the guarantee to being a backstop, which is what a constraint should be.
 
 {lang=python,line-numbers=on,starting-line-number=83}

@@ -1,0 +1,24 @@
+<div class="card mb-3" data-post-id="{{ post.post_id }}">
+    <div class="card-body">
+        <div class="d-flex">
+            <img src="{{ post.avatar_url }}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40"
+                alt="avatar">
+            <div class="flex-grow-1">
+                <a href="{{ url_for('user_app.profile', username=post.author_username) }}"
+                    class="fw-bold">@{{ post.author_username }}</a>
+                <p class="mb-1">{{ post.message }}</p>
+                {% if post.images %}
+                <div class="d-flex gap-2 mb-2">
+                    {% for img in post.images %}
+                    <img src="{{ img.url }}" alt="post image"
+                        style="height: 200px; width: auto; border-radius: 6px;">
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <a href="{{ post.permalink }}" class="small text-muted">
+                    {{ post.created.strftime('%b %d, %Y %H:%M') }}
+                </a>
+            </div>
+        </div>
+    </div>
+</div>

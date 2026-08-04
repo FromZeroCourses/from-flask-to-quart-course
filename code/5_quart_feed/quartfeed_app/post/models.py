@@ -22,6 +22,16 @@ post_table = Table(
     Column("created", DateTime(timezone=True), server_default=func.now()),
 )
 
+feed_table = Table(
+    "feed",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, ForeignKey("user.id"), nullable=False),
+    Column("post_id", Integer, ForeignKey("post.id"), nullable=False),
+    Column("updated", DateTime(timezone=True), server_default=func.now()),
+)
+
+
 post_image_table = Table(
     "post_image",
     metadata,

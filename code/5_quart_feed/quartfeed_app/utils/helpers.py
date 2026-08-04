@@ -1,6 +1,7 @@
+import os
 import re
-import secrets
 import string
+import time
 from functools import wraps
 from typing import Any, Callable, Optional
 
@@ -39,12 +40,62 @@ def image_url(user_id: int, image: Optional[int], size: str = "lg") -> str:
     return "/static/default_profile.png"
 
 
-_UID_ALPHABET = string.ascii_lowercase + string.digits
+SNOWFLAKE_EPOCH_MS = 1_704_067_200_000  # 2024-01-01T00:00:00Z
+_WORKER_ID_BITS = 10
+_SEQUENCE_BITS = 12
+_MAX_WORKER_ID = (1 << _WORKER_ID_BITS) - 1
+_MAX_SEQUENCE = (1 << _SEQUENCE_BITS) - 1
 
 
-def generate_uid(length: int = 8) -> str:
-    """Return a short, opaque, URL-safe id for a post permalink."""
-    return "".join(secrets.choice(_UID_ALPHABET) for _ in range(length))
+class SnowflakeGenerator:
+    """Twitter's id scheme: 41 bits of milliseconds, 10 of worker, 12 of sequence."""
+
+    def __init__(self, worker_id: int, epoch_ms: int = SNOWFLAKE_EPOCH_MS) -> None:
+        if not 0 <= worker_id <= _MAX_WORKER_ID:
+            raise ValueError(f"worker_id must be between 0 and {_MAX_WORKER_ID}")
+        self.worker_id = worker_id
+        self.epoch_ms = epoch_ms
+        self._sequence = 0
+        self._last_ms = -1
+
+    def next_id(self) -> int:
+        now_ms = int(time.time() * 1000)
+
+        if now_ms < self._last_ms:
+            drift = self._last_ms - now_ms
+            raise RuntimeError(f"clock moved backwards {drift}ms, refusing to mint")
+
+        if now_ms == self._last_ms:
+            self._sequence = (self._sequence + 1) & _MAX_SEQUENCE
+            while self._sequence == 0 and now_ms <= self._last_ms:
+                now_ms = int(time.time() * 1000)
+        else:
+            self._sequence = 0
+
+        self._last_ms = now_ms
+        return (
+            ((now_ms - self.epoch_ms) << (_WORKER_ID_BITS + _SEQUENCE_BITS))
+            | (self.worker_id << _SEQUENCE_BITS)
+            | self._sequence
+        )
+
+
+_BASE62 = string.digits + string.ascii_uppercase + string.ascii_lowercase
+_snowflake = SnowflakeGenerator(worker_id=int(os.environ.get("WORKER_ID", "0")))
+
+
+def _base62(number: int) -> str:
+    """Encode a non-negative integer as base62, shortest form."""
+    digits = []
+    while number:
+        number, remainder = divmod(number, 62)
+        digits.append(_BASE62[remainder])
+    return "".join(reversed(digits)) or _BASE62[0]
+
+
+def generate_uid() -> str:
+    """The post's public id: a Snowflake, base62 encoded so it fits in a URL."""
+    return _base62(_snowflake.next_id())
 
 
 def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:

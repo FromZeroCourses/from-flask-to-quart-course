@@ -1833,25 +1833,82 @@ Each row is one image belonging to a post, with the same timestamp `image_id` tr
 
 [Save the file](https://fmze.co/fftq-5.8.1).
 
-Now those two URL pieces, the `uid` and the slug. Both are small pure functions, so they belong in `utils/helpers.py`. Three new imports first, at the very top of the file:
+Now those two URL pieces, the `uid` and the slug. Both belong in `utils/helpers.py`, and both are small, but the `uid` carries a requirement worth stating precisely: it has to be unique. Not unique most of the time, not unique unless we get unlucky. Unique, every time, for as long as this application runs. The tempting shortcut is to generate a handful of random characters and let the database's UNIQUE index catch a repeat, but think about what that actually does the day it fires. The insert raises, the transaction rolls back, and someone loses a post to an error they can do nothing about. Uniqueness by luck, with a crash as the fallback, is not a design. So let's build an id that cannot collide in the first place. Four new imports at the very top of the file:
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
+import os
 import re
-import secrets
 import string
+import time
 ```
 
-And the helpers themselves, at the bottom:
+The scheme we want is the one Twitter built for this exact problem, and it's called a Snowflake. The insight is that if you can't stop and ask a central authority for the next id, you assemble one out of the three things every process already knows on its own: what time it is, which process it is, and how many ids it has handed out during the current millisecond. Pack those into a single sixty-four bit integer and no other process can produce the same value, because no other process shares all three. Here are the field widths and the generator itself:
 
-{lang=python,line-numbers=on,starting-line-number=42}
+{lang=python,line-numbers=on,starting-line-number=43}
 ```
-_UID_ALPHABET = string.ascii_lowercase + string.digits
+SNOWFLAKE_EPOCH_MS = 1_704_067_200_000  # 2024-01-01T00:00:00Z
+_WORKER_ID_BITS = 10
+_SEQUENCE_BITS = 12
+_MAX_WORKER_ID = (1 << _WORKER_ID_BITS) - 1
+_MAX_SEQUENCE = (1 << _SEQUENCE_BITS) - 1
 
 
-def generate_uid(length: int = 8) -> str:
-    """Return a short, opaque, URL-safe id for a post permalink."""
-    return "".join(secrets.choice(_UID_ALPHABET) for _ in range(length))
+class SnowflakeGenerator:
+    """Twitter's id scheme: 41 bits of milliseconds, 10 of worker, 12 of sequence."""
+
+    def __init__(self, worker_id: int, epoch_ms: int = SNOWFLAKE_EPOCH_MS) -> None:
+        if not 0 <= worker_id <= _MAX_WORKER_ID:
+            raise ValueError(f"worker_id must be between 0 and {_MAX_WORKER_ID}")
+        self.worker_id = worker_id
+        self.epoch_ms = epoch_ms
+        self._sequence = 0
+        self._last_ms = -1
+
+    def next_id(self) -> int:
+        now_ms = int(time.time() * 1000)
+
+        if now_ms < self._last_ms:
+            drift = self._last_ms - now_ms
+            raise RuntimeError(f"clock moved backwards {drift}ms, refusing to mint")
+
+        if now_ms == self._last_ms:
+            self._sequence = (self._sequence + 1) & _MAX_SEQUENCE
+            while self._sequence == 0 and now_ms <= self._last_ms:
+                now_ms = int(time.time() * 1000)
+        else:
+            self._sequence = 0
+
+        self._last_ms = now_ms
+        return (
+            ((now_ms - self.epoch_ms) << (_WORKER_ID_BITS + _SEQUENCE_BITS))
+            | (self.worker_id << _SEQUENCE_BITS)
+            | self._sequence
+        )
+```
+
+![A Snowflake packs a millisecond timestamp, the worker id, and a per-millisecond sequence into one 64-bit integer, so two processes minting ids at the same instant still cannot collide.](images/5.8-scene4-img1.png)
+
+Read `next_id` from the top and every line is defending the same promise. The timestamp is milliseconds counted from an epoch we picked ourselves, the start of 2024, which is what keeps forty-one bits good for about seventy years instead of running out. If the clock has gone backwards, which happens for real when a machine syncs its time, we refuse: minting now could repeat an id we already handed out, and a loud error is enormously better than a silent duplicate. If we're still inside the same millisecond as the last call, the sequence counter advances, giving us four thousand and ninety-six ids per millisecond per worker, and on the rare occasion we exhaust even that, we spin until the clock ticks over rather than wrap around onto ids we've already issued. A new millisecond resets the sequence. Then the three fields are shifted into their slots and combined. The result is that uniqueness is now structural: it holds because of how the number is built, not because we got lucky. The UNIQUE index on the column stays exactly where it is, but it has been demoted from being the guarantee to being a backstop, which is what a constraint should be.
+
+{lang=python,line-numbers=on,starting-line-number=83}
+```
+_BASE62 = string.digits + string.ascii_uppercase + string.ascii_lowercase
+_snowflake = SnowflakeGenerator(worker_id=int(os.environ.get("WORKER_ID", "0")))
+
+
+def _base62(number: int) -> str:
+    """Encode a non-negative integer as base62, shortest form."""
+    digits = []
+    while number:
+        number, remainder = divmod(number, 62)
+        digits.append(_BASE62[remainder])
+    return "".join(reversed(digits)) or _BASE62[0]
+
+
+def generate_uid() -> str:
+    """The post's public id: a Snowflake, base62 encoded so it fits in a URL."""
+    return _base62(_snowflake.next_id())
 
 
 def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
@@ -1861,15 +1918,9 @@ def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
     return slug or "post"
 ```
 
-Here's the design. A permalink like `/post/ab12cd34/i-need-to-go-to-the-supermarket` has two parts. The `uid`, generated by `generate_uid`, is a short random string of letters and digits. It's what actually identifies the post, and being random and opaque means people can't guess how many posts exist or walk through them by incrementing a number.
+A sixty-four bit number written out in decimal runs to nineteen digits, which makes for a miserable URL, so `_base62` re-writes it using digits and both cases of the alphabet and gets us down to ten or eleven characters. Two properties come along for free and both matter. Because the timestamp sits in the high bits, ids sort by creation time, so ordering by id is ordering by age, and new rows land at the right-hand edge of the index instead of scattering across it. The `WORKER_ID` environment variable is the one thing you must set deliberately: every process minting ids needs its own, or two of them will eventually agree on a millisecond and a sequence number. One caveat, and it's the honest one: a Snowflake is not a secret. Anyone can read the timestamp back out of it and guess at its neighbours, exactly as they can with the ids in real twitter.com status URLs. That's fine for identifying a public post, and it's completely wrong anywhere you need a token nobody can guess. The slug is the easy half: `slugify` lowercases the message, strips the punctuation, and keeps the first few words. It's cosmetic, there for readers and search engines, and only the `uid` is ever used for lookup, which buys us a neat trick later. If the slug in the URL is stale or missing, we can redirect to the correct one instead of returning a 404.
 
-![A permalink has two parts: the random uid that identifies the post, and the slug that exists only for readers and search engines.](images/5.8-scene4-img1.png)
-
-![A random uid keeps post URLs opaque, so nobody can count your posts or walk through them by incrementing a number.](images/5.8-scene4-img2.png)
-
-The second part is the slug, made by `slugify` from the message: lowercased, stripped of punctuation, and cut to the first few words. The slug is purely cosmetic, there for readability and search engines. Only the `uid` matters for lookup, which lets us do a neat trick later: if the slug in the URL is stale or missing, we redirect to the correct one.
-
-![Because lookup uses only the uid, a stale or missing slug can be repaired with a redirect instead of a 404.](images/5.8-scene4-img3.png)
+![A permalink has two parts: the Snowflake uid that identifies the post, and the slug that exists only for readers and search engines.](images/5.8-scene4-img2.png)
 
 [Save the file](https://fmze.co/fftq-5.8.2).
 
@@ -1900,7 +1951,7 @@ It's the same Wand pattern as before, but instead of cropping to a square, `tran
 
 Those files land in `static/uploads/posts/`, named `{post_id}.{image_id}.xlg.png`, and the templates are going to need their URL. That's one more helper, at the bottom of `utils/helpers.py`:
 
-{lang=python,line-numbers=on,starting-line-number=57}
+{lang=python,line-numbers=on,starting-line-number=108}
 ```
 def post_image_url(post_id: int, image_id: int) -> str:
     """URL for a post image, written by image_height_transform."""

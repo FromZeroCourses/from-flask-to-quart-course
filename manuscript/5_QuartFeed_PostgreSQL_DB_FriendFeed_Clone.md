@@ -1833,25 +1833,80 @@ Each row is one image belonging to a post, with the same timestamp `image_id` tr
 
 [Save the file](https://fmze.co/fftq-5.8.1).
 
-Now those two URL pieces, the `uid` and the slug. Both are small pure functions, so they belong in `utils/helpers.py`. Three new imports first, at the very top of the file:
+Now those two URL pieces, the `uid` and the slug. Both belong in `utils/helpers.py`, and both are small, but the `uid` carries a requirement worth stating precisely: it has to be unique. Not unique most of the time, not unique unless we get unlucky. Unique, every time, for as long as this application runs. The tempting shortcut is to generate a handful of random characters and let the database's UNIQUE index catch a repeat, but think about what that actually does the day it fires. The insert raises, the transaction rolls back, and someone loses a post to an error they can do nothing about. Uniqueness by luck, with a crash as the fallback, is not a design. So let's build an id that cannot collide in the first place. Four new imports at the very top of the file:
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
+import os
 import re
-import secrets
 import string
+import time
 ```
 
-And the helpers themselves, at the bottom:
+The scheme we want is the one Twitter built for this exact problem, and it's called a Snowflake. The insight is that if you can't stop and ask a central authority for the next id, you assemble one out of the three things every process already knows on its own: what time it is, which process it is, and how many ids it has handed out during the current millisecond. Pack those into a single sixty-four bit integer and no other process can produce the same value, because no other process shares all three. Here are the field widths and the generator itself:
 
-{lang=python,line-numbers=on,starting-line-number=42}
+{lang=python,line-numbers=on,starting-line-number=43}
 ```
-_UID_ALPHABET = string.ascii_lowercase + string.digits
+SNOWFLAKE_EPOCH_MS = 1_704_067_200_000  # 2024-01-01T00:00:00Z
+_WORKER_ID_BITS = 10
+_SEQUENCE_BITS = 12
+_MAX_WORKER_ID = (1 << _WORKER_ID_BITS) - 1
+_MAX_SEQUENCE = (1 << _SEQUENCE_BITS) - 1
 
 
-def generate_uid(length: int = 8) -> str:
-    """Return a short, opaque, URL-safe id for a post permalink."""
-    return "".join(secrets.choice(_UID_ALPHABET) for _ in range(length))
+class SnowflakeGenerator:
+    """Twitter's id scheme: 41 bits of milliseconds, 10 of worker, 12 of sequence."""
+
+    def __init__(self, worker_id: int, epoch_ms: int = SNOWFLAKE_EPOCH_MS) -> None:
+        if not 0 <= worker_id <= _MAX_WORKER_ID:
+            raise ValueError(f"worker_id must be between 0 and {_MAX_WORKER_ID}")
+        self.worker_id = worker_id
+        self.epoch_ms = epoch_ms
+        self._sequence = 0
+        self._last_ms = -1
+
+    def next_id(self) -> int:
+        now_ms = int(time.time() * 1000)
+
+        if now_ms < self._last_ms:
+            drift = self._last_ms - now_ms
+            raise RuntimeError(f"clock moved backwards {drift}ms, refusing to mint")
+
+        if now_ms == self._last_ms:
+            self._sequence = (self._sequence + 1) & _MAX_SEQUENCE
+            while self._sequence == 0 and now_ms <= self._last_ms:
+                now_ms = int(time.time() * 1000)
+        else:
+            self._sequence = 0
+
+        self._last_ms = now_ms
+        return (
+            ((now_ms - self.epoch_ms) << (_WORKER_ID_BITS + _SEQUENCE_BITS))
+            | (self.worker_id << _SEQUENCE_BITS)
+            | self._sequence
+        )
+```
+
+Read `next_id` from the top and every line is defending the same promise. The timestamp is milliseconds counted from an epoch we picked ourselves, the start of 2024, which is what keeps forty-one bits good for about seventy years instead of running out. If the clock has gone backwards, which happens for real when a machine syncs its time, we refuse: minting now could repeat an id we already handed out, and a loud error is enormously better than a silent duplicate. If we're still inside the same millisecond as the last call, the sequence counter advances, giving us four thousand and ninety-six ids per millisecond per worker, and on the rare occasion we exhaust even that, we spin until the clock ticks over rather than wrap around onto ids we've already issued. A new millisecond resets the sequence. Then the three fields are shifted into their slots and combined. The result is that uniqueness is now structural: it holds because of how the number is built, not because we got lucky. The UNIQUE index on the column stays exactly where it is, but it has been demoted from being the guarantee to being a backstop, which is what a constraint should be.
+
+{lang=python,line-numbers=on,starting-line-number=83}
+```
+_BASE62 = string.digits + string.ascii_uppercase + string.ascii_lowercase
+_snowflake = SnowflakeGenerator(worker_id=int(os.environ.get("WORKER_ID", "0")))
+
+
+def _base62(number: int) -> str:
+    """Encode a non-negative integer as base62, shortest form."""
+    digits = []
+    while number:
+        number, remainder = divmod(number, 62)
+        digits.append(_BASE62[remainder])
+    return "".join(reversed(digits)) or _BASE62[0]
+
+
+def generate_uid() -> str:
+    """The post's public id: a Snowflake, base62 encoded so it fits in a URL."""
+    return _base62(_snowflake.next_id())
 
 
 def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
@@ -1861,15 +1916,9 @@ def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
     return slug or "post"
 ```
 
-Here's the design. A permalink like `/post/ab12cd34/i-need-to-go-to-the-supermarket` has two parts. The `uid`, generated by `generate_uid`, is a short random string of letters and digits. It's what actually identifies the post, and being random and opaque means people can't guess how many posts exist or walk through them by incrementing a number.
+A sixty-four bit number written out in decimal runs to nineteen digits, which makes for a miserable URL, so `_base62` re-writes it using digits and both cases of the alphabet and gets us down to ten or eleven characters. Two properties come along for free and both matter. Because the timestamp sits in the high bits, ids sort by creation time, so ordering by id is ordering by age, and new rows land at the right-hand edge of the index instead of scattering across it. The `WORKER_ID` environment variable is the one thing you must set deliberately: every process minting ids needs its own, or two of them will eventually agree on a millisecond and a sequence number. One caveat, and it's the honest one: a Snowflake is not a secret. Anyone can read the timestamp back out of it and guess at its neighbours, exactly as they can with the ids in real twitter.com status URLs. That's fine for identifying a public post, and it's completely wrong anywhere you need a token nobody can guess. The slug is the easy half: `slugify` lowercases the message, strips the punctuation, and keeps the first few words. It's cosmetic, there for readers and search engines, and only the `uid` is ever used for lookup, which buys us a neat trick later. If the slug in the URL is stale or missing, we can redirect to the correct one instead of returning a 404.
 
-![A permalink has two parts: the random uid that identifies the post, and the slug that exists only for readers and search engines.](images/5.8-scene4-img1.png)
-
-![A random uid keeps post URLs opaque, so nobody can count your posts or walk through them by incrementing a number.](images/5.8-scene4-img2.png)
-
-The second part is the slug, made by `slugify` from the message: lowercased, stripped of punctuation, and cut to the first few words. The slug is purely cosmetic, there for readability and search engines. Only the `uid` matters for lookup, which lets us do a neat trick later: if the slug in the URL is stale or missing, we redirect to the correct one.
-
-![Because lookup uses only the uid, a stale or missing slug can be repaired with a redirect instead of a 404.](images/5.8-scene4-img3.png)
+![A permalink has two parts: the Snowflake uid that identifies the post, and the slug that exists only for readers and search engines.](images/5.8-scene4-img2.png)
 
 [Save the file](https://fmze.co/fftq-5.8.2).
 
@@ -1900,7 +1949,7 @@ It's the same Wand pattern as before, but instead of cropping to a square, `tran
 
 Those files land in `static/uploads/posts/`, named `{post_id}.{image_id}.xlg.png`, and the templates are going to need their URL. That's one more helper, at the bottom of `utils/helpers.py`:
 
-{lang=python,line-numbers=on,starting-line-number=57}
+{lang=python,line-numbers=on,starting-line-number=108}
 ```
 def post_image_url(post_id: int, image_id: int) -> str:
     """URL for a post image, written by image_height_transform."""
@@ -2226,11 +2275,7 @@ The form posts to `create_post` and carries `enctype="multipart/form-data"`, whi
 
 [Save the file](https://fmze.co/fftq-5.8.9).
 
-Now let's get the database caught up with the models we just wrote. Start by rebuilding the web image, so the container is running our new code.
-
-Then ask Alembic to compare the models against the database and write the migration for us. It finds two tables it has never seen before and generates a revision that creates them.
-
-And apply it. The upgrade runs that new revision, the post and post image tables land in Postgres, and the app is ready to take its first post.
+Now let's get the database caught up with the models we just wrote. Rebuild the web image so the container is running our new code, then ask Alembic to compare the models against the database and write the migration for us. It finds two tables it has never seen before and generates a revision that creates them, and the upgrade applies it: the post and post image tables land in Postgres, and the app is ready to take its first post.
 
 {lang=bash,line-numbers=off}
 ```
@@ -2249,9 +2294,9 @@ There are two ways to build a feed. The obvious one is to query it on read: ever
 
 The approach real feeds use is the opposite: fan-out on write. The moment someone posts, we immediately write one row into a `feed` table for each of their followers. Reading your feed then becomes a simple, fast lookup of your own rows. We do a little more work when someone posts, which is rare, to make reading, which is constant, cheap. That's the trade we want.
 
-So we need a `feed` table. It's a materialized, per-user timeline: each row says "this post belongs in this user's feed". Add it to `post/models.py` below `post_table`:
+So we need a `feed` table. It's a materialized, per-user timeline: each row says "this post belongs in this user's feed". Add it to `post/models.py`, between `post_table` and `post_image_table`:
 
-{lang=python,line-numbers=on,starting-line-number=27}
+{lang=python,line-numbers=on,starting-line-number=25}
 ```
 feed_table = Table(
     "feed",
@@ -2265,7 +2310,9 @@ feed_table = Table(
 
 The key thing to understand is `user_id` here is not the author. It's the feed's owner, the recipient. One post by a popular user creates many feed rows, one per follower, each with that follower as `user_id`. The `updated` column is what we sort a feed by, so the freshest activity floats to the top.
 
-[Save the file](https://fmze.co/fftq-5.9.1) and now let's write the fan-out logic in its own file. Create `utils/feed_ops.py`:
+[Save the file](https://fmze.co/fftq-5.9.1)
+
+Now let's write the fan-out logic in its own file. Create `utils/feed_ops.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -2284,26 +2331,44 @@ async def add_to_feed(conn, user_id: int, post_id: int) -> None:
 
 
 async def fan_out_post(conn, post_id: int, recipient_ids: Iterable[int]) -> None:
-    """A brand-new post lands directly in the author's + followers' feeds."""
+    """A brand-new post lands directly in the author's and followers' feeds."""
     for user_id in set(recipient_ids):
         await add_to_feed(conn, user_id, post_id)
 ```
 
 `add_to_feed` writes a single feed row, and `fan_out_post` loops over a set of recipients and writes one for each. We wrap the recipients in `set()` so nobody gets a duplicate row. This is the whole fan-out engine, and we'll extend it in a couple of lessons when comments start bubbling posts around.
 
-[Save the file](https://fmze.co/fftq-5.9.2).
+[Save the file](https://fmze.co/fftq-5.9.2)
 
-Now wire it into `create_post`. Import the helpers at the top of `post/views.py`:
+Now wire it into the app. `post/views.py` needs a handful of new names, so let's do the imports first. We need `request` from Quart to read the pagination offset later, so add it to the import list:
 
-{lang=python,line-numbers=on,starting-line-number=15}
+{lang=python,line-numbers=on,starting-line-number=10}
 ```
-from utils.feed_ops import fan_out_post
+    request,
+```
+
+Then the local imports, which pick up the `feed` table, the `followers` helper, the user table for the join, the fan-out function, and `image_url` for the post author's avatar:
+
+{lang=python,line-numbers=on,starting-line-number=16}
+```
+from post.forms import PostForm
+from post.models import feed_table, post_image_table, post_table
 from relationship.views import followers
+from user.models import user_table
+from utils.feed_ops import fan_out_post
+from utils.helpers import (
+    generate_uid,
+    image_url,
+    login_required,
+    post_image_url,
+    slugify,
+)
+from utils.imaging import image_height_transform
 ```
 
-Then, right after we insert the post and get its `post_id`, fan it out:
+With those in place, fan the post out. Inside `create_post`, right after we insert the post and read back its `post_id`:
 
-{lang=python,line-numbers=on,starting-line-number=58}
+{lang=python,line-numbers=on,starting-line-number=102}
 ```
             recipient_ids = set(await followers(conn, session["user_id"]))
             recipient_ids.add(session["user_id"])
@@ -2312,44 +2377,83 @@ Then, right after we insert the post and get its `post_id`, fan it out:
 
 Remember the `followers` helper we wrote back in the relationship lesson, and said to keep in mind? This is the moment. We fetch everyone who follows the author, add the author themselves so your own posts show in your own feed, and fan the post out to all of them. Every one of those users now has a feed row for this post.
 
-[Save the file](https://fmze.co/fftq-5.9.3).
+[Save the file](https://fmze.co/fftq-5.9.3)
 
-Now the home page reads from the feed instead of the author's own posts. This query joins three tables, so let's replace the `home` view's query:
-
-{lang=python,line-numbers=on,starting-line-number=30}
-```
-        feed_query = (
-            select(
-                post_table.c.id.label("post_id"),
-                post_table.c.uid,
-                post_table.c.message,
-                post_table.c.created,
-                user_table.c.username.label("author_username"),
-                user_table.c.image.label("author_image"),
-                user_table.c.id.label("author_id"),
-            )
-            .select_from(
-                feed_table.join(post_table, feed_table.c.post_id == post_table.c.id)
-                .join(user_table, post_table.c.user_id == user_table.c.id)
-            )
-            .where(feed_table.c.user_id == session["user_id"])
-            .order_by(feed_table.c.updated.desc())
-            .limit(10)
-        )
-        posts = (await conn.execute(feed_query)).fetchall()
-```
-
-We start from `feed_table` and keep only the rows where the feed owner is us. Then we join to `post_table` to get each post's content, and join again to `user_table` to get the author's name and avatar. We order by the feed's `updated` column so the newest activity is on top, and take the first ten. Add `user_table` to the imports for the join.
-
-[Save the file](https://fmze.co/fftq-5.9.4).
-
-One page of ten posts isn't enough for an active feed, so let's add infinite scroll: when you reach the bottom, load the next page. That means an endpoint that returns just the next batch of post cards. Add a `feed` view:
+That's the write side done. Now the read side: the home page has to stop querying your own posts and start reading your feed rows. We'll need that query in two places, the home page and the infinite-scroll endpoint we're about to write, so it goes straight into its own helper. Add `_load_feed` above the `home` view:
 
 {lang=python,line-numbers=on,starting-line-number=52}
+```
+async def _load_feed(
+    conn: Any, user_id: int, offset: int = 0, limit: int = 10
+) -> List[Dict[str, Any]]:
+    """One page of a user's feed, newest activity first."""
+    feed_query = (
+        select(
+            post_table.c.id.label("post_id"),
+            post_table.c.uid,
+            post_table.c.message,
+            post_table.c.created,
+            user_table.c.id.label("author_id"),
+            user_table.c.username.label("author_username"),
+            user_table.c.image.label("author_image"),
+        )
+        .select_from(
+            feed_table.join(post_table, feed_table.c.post_id == post_table.c.id)
+            .join(user_table, post_table.c.user_id == user_table.c.id)
+        )
+        .where(feed_table.c.user_id == user_id)
+        .order_by(feed_table.c.updated.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = (await conn.execute(feed_query)).fetchall()
+```
+
+This query walks three tables. We start from `feed_table` and keep only the rows whose owner is us, which is the cheap lookup the whole design was for. Then we join to `post_table` to get each post's text and permalink id, and join again to `user_table` to get the author's name and avatar, because a feed shows other people's posts and every card has to say who wrote it. We order by the feed's `updated` column so the newest activity is on top, and `limit` with `offset` is what lets us hand out the feed one page at a time.
+
+Rows come back flat, so let's shape each one into the dictionary the template wants:
+
+{lang=python,line-numbers=on,starting-line-number=77}
+```
+    posts = []
+    for row in rows:
+        posts.append(
+            {
+                "post_id": row.post_id,
+                "message": row.message,
+                "created": row.created,
+                "author_username": row.author_username,
+                "avatar_url": image_url(row.author_id, row.author_image, "sm"),
+                "images": await _post_images(conn, row.post_id),
+                "permalink": url_for(
+                    "post_app.detail", uid=row.uid, slug=slugify(row.message)
+                ),
+            }
+        )
+
+    return posts
+```
+
+Two of those keys do real work. `avatar_url` runs the author's stored image through the same `image_url` helper the profile page uses, asking for the small size, and it falls back to the default avatar for anyone who never uploaded one. `images` reuses `_post_images`, the helper we wrote for attachments last lesson, so a photo posted by someone you follow shows up in your feed exactly like it does on their own page.
+
+Now `home` gets much shorter. Replace its whole query with one call:
+
+{lang=python,line-numbers=on,starting-line-number=103}
+```
+    async with engine.begin() as conn:
+        posts = await _load_feed(conn, session["user_id"])
+```
+
+[Save the file](https://fmze.co/fftq-5.9.4)
+
+One page of ten posts isn't enough for an active feed, so let's add infinite scroll: when you reach the bottom, load the next page. That means an endpoint that returns just the next batch of post cards, no page furniture around them. Add a `feed` view right below `home`:
+
+{lang=python,line-numbers=on,starting-line-number=109}
 ```
 @post_app.route("/feed")
 @login_required
 async def feed():
+    """One page of feed cards for infinite scroll. Empty when exhausted."""
     try:
         offset = int(request.args.get("offset", 0))
     except (TypeError, ValueError):
@@ -2362,9 +2466,81 @@ async def feed():
     return await render_template("post/_feed_items.html", posts=posts)
 ```
 
-This takes an `offset` from the query string and returns the next slice of the feed, rendered with a small partial template, `_feed_items.html`, that loops over posts and renders each card. Pull the feed query we just wrote into a shared `_load_feed` helper so both `home` and `feed` use it, differing only by their offset. Add `request` to the imports.
+It reads an `offset` off the query string, defaulting to zero and shrugging off anything that isn't a number, calls the same `_load_feed` the home page uses, and renders a partial template instead of a full page. When the offset runs past the end of the feed, `_load_feed` comes back empty and this endpoint returns an empty string, which is how the browser will know to stop asking.
 
-[Save the file](https://fmze.co/fftq-5.9.5). On the front end, a little script watches for the page bottom and fetches the next offset. Create `static/js/infinite_scroll.js`:
+[Save the file](https://fmze.co/fftq-5.9.5)
+
+Both the home page and that endpoint have to render a post card, and neither of them should own the markup twice. So let's pull the card into a partial of its own. Create `templates/post/_post_card.html`:
+
+{lang=html,line-numbers=on}
+```
+<div class="card mb-3" data-post-id="{{ post.post_id }}">
+    <div class="card-body">
+        <div class="d-flex">
+            <img src="{{ post.avatar_url }}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40"
+                alt="avatar">
+            <div class="flex-grow-1">
+                <a href="{{ url_for('user_app.profile', username=post.author_username) }}"
+                    class="fw-bold">@{{ post.author_username }}</a>
+                <p class="mb-1">{{ post.message }}</p>
+                {% if post.images %}
+                <div class="d-flex gap-2 mb-2">
+                    {% for img in post.images %}
+                    <img src="{{ img.url }}" alt="post image"
+                        style="height: 200px; width: auto; border-radius: 6px;">
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <a href="{{ post.permalink }}" class="small text-muted">
+                    {{ post.created.strftime('%b %d, %Y %H:%M') }}
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+```
+
+It's the card we already had, with the author's avatar and username added in front of the message, because on your own page every post was obviously yours and in a feed it never is. The `data-post-id` attribute looks decorative, but it's the hook the scroll script will count to work out the next offset.
+
+[Save the file](https://fmze.co/fftq-5.9.6)
+
+The endpoint renders a batch of those cards, so it needs one more partial, a loop with nothing else in it. Create `templates/post/_feed_items.html`:
+
+{lang=html,line-numbers=on}
+```
+{% for post in posts %}{% include "post/_post_card.html" %}{% endfor %}
+```
+
+One line, and it's deliberately tight: no whitespace and no wrapper, so when the feed is exhausted this renders to an empty string and the browser can test for that.
+
+[Save the file](https://fmze.co/fftq-5.9.7)
+
+Now the home page uses the same partial, wrapped in the container the script needs. In `templates/post/home.html`, replace the card loop:
+
+{lang=html,line-numbers=on,starting-line-number=29}
+```
+        <div id="feed">
+            {% if posts %}
+            {% include "post/_feed_items.html" %}
+            {% else %}
+            <p class="text-muted">Nothing in your feed yet &mdash; follow some people or write your first post.</p>
+            {% endif %}
+        </div>
+        <div id="feed-sentinel"></div>
+```
+
+The cards now live inside a `#feed` container, which is where new pages get appended, and that empty `#feed-sentinel` underneath is what the browser will watch for: when the sentinel scrolls into view, we're at the bottom. Then load the script, at the end of the file:
+
+{lang=html,line-numbers=on,starting-line-number=43}
+```
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/infinite_scroll.js') }}"></script>
+{% endblock %}
+```
+
+[Save the file](https://fmze.co/fftq-5.9.8)
+
+Last piece, the script itself. Create `static/js/infinite_scroll.js`:
 
 {lang=javascript,line-numbers=on}
 ```
@@ -2373,31 +2549,45 @@ document.addEventListener("DOMContentLoaded", () => {
   const sentinel = document.getElementById("feed-sentinel");
   if (!feed || !sentinel) return;
 
-  let offset = feed.querySelectorAll("[data-post-id]").length;
   let loading = false;
   let done = false;
 
   const observer = new IntersectionObserver(async (entries) => {
     if (!entries[0].isIntersecting || loading || done) return;
     loading = true;
+
+    const offset = feed.querySelectorAll("[data-post-id]").length;
     const res = await fetch(`/feed?offset=${offset}`);
     const html = (await res.text()).trim();
+
     if (!html) {
       done = true;
+      observer.disconnect();
     } else {
       feed.insertAdjacentHTML("beforeend", html);
-      offset = feed.querySelectorAll("[data-post-id]").length;
     }
+
     loading = false;
-  });
+  }, { rootMargin: "200px" });
 
   observer.observe(sentinel);
 });
 ```
 
-We use an `IntersectionObserver`, the browser's efficient way to notice when an element scrolls into view. We watch an empty sentinel element at the bottom of the feed. When it becomes visible, we fetch the next page by offset and append the returned cards. If the server returns nothing, we're at the end and we stop asking.
+We use an `IntersectionObserver`, the browser's efficient way to notice when an element scrolls into view, and we point it at the sentinel. The `rootMargin` of two hundred pixels means it fires a little before the sentinel is actually visible, so the next page is usually there by the time you scroll to it. The offset is simply how many cards are on the page already, which is why every card carries `data-post-id`. The `loading` and `done` flags stop us firing a second request while one is in flight, and stop us asking forever once the server answers with nothing.
 
-[Save the file](https://fmze.co/fftq-5.9.6) and load it from the home template, adding a `<div id="feed-sentinel"></div>` after the feed. Rebuild, run the migration for the `feed` table, then restart. Log in as two accounts, follow one from the other, and post. The post now appears in the follower's home feed, and scrolling loads older posts. The feed works, but you still have to refresh to see new posts. Let's fix that with SSE.
+[Save the file](https://fmze.co/fftq-5.9.9)
+
+Now get the database caught up. Rebuild the web image so the container is running our new code, then ask Alembic to compare the models against the database: it finds the `feed` table it has never seen before, writes the revision, and the upgrade applies it.
+
+{lang=bash,line-numbers=off}
+```
+$ docker compose build web
+$ docker compose run --rm web uv run alembic revision --autogenerate -m "create feed table"
+$ docker compose run --rm web uv run alembic upgrade head
+```
+
+Restart, then try it with two accounts: log in as one, follow the other, and post from the account being followed. The post appears on the follower's home page, above their own posts, with the author's name and avatar on the card. That's fan-out working: the moment the post was written, a feed row was written for every follower, and reading the feed was one cheap lookup. Scroll to the bottom of a busy account and the next ten cards load themselves. The one thing still missing is immediacy, because a post that arrives while you're looking at the page won't show until you reload. That's the last big piece of QuartFeed, and it's coming.
 
 ## Messages and Feed Tests <!-- 5.10 -->
 

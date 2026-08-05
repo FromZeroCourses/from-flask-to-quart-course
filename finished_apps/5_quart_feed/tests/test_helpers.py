@@ -38,3 +38,24 @@ def test_likes_line_collapses_over_five():
     assert "4 other people" in s  # 7 - 3 shown
     assert "likers-more" in s and "likers-full" in s
     assert "/user/u1" in s and "/user/u7" in s  # first shown + present in full list
+
+
+from utils.helpers import generate_uid
+
+
+def test_generate_uid_is_16_hex_chars():
+    uid = generate_uid()
+    assert len(uid) == 16
+    int(uid, 16)  # round-trips back to the Snowflake it encodes
+
+
+def test_generate_uid_is_unique():
+    uids = [generate_uid() for _ in range(5000)]
+    assert len(set(uids)) == len(uids)
+
+
+def test_generate_uid_sorts_chronologically():
+    # The timestamp lives in the high bits and the width is fixed, so the hex
+    # form sorts as text in the order the ids were minted.
+    uids = [generate_uid() for _ in range(100)]
+    assert uids == sorted(uids)

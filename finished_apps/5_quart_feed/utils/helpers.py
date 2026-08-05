@@ -1,12 +1,12 @@
+import os
 import re
-import secrets
-import string
 from functools import wraps
 from typing import Any, Callable, List, Optional
 from urllib.parse import quote
 
 from markupsafe import Markup, escape
 from quart import current_app, redirect, request, session, url_for
+from snowflake import SnowflakeGenerator
 from sqlalchemy import select
 from sqlalchemy.engine import Row
 
@@ -14,13 +14,14 @@ from user.models import user_table
 
 _URL_RE = re.compile(r"(https?://[^\s<]+)")
 
-# base36 (lowercase letters + digits) keeps post uids short and URL-clean.
-_UID_ALPHABET = string.ascii_lowercase + string.digits
+# Every process minting ids needs its OWN instance number, or two of them
+# will eventually agree on a millisecond and a sequence.
+_snowflake = SnowflakeGenerator(int(os.environ.get("INSTANCE_ID", "0")))
 
 
-def generate_uid(length: int = 8) -> str:
-    """Return a short, opaque, URL-safe id for a post permalink."""
-    return "".join(secrets.choice(_UID_ALPHABET) for _ in range(length))
+def generate_uid() -> str:
+    """The post's public id: a Snowflake, hex encoded so it fits in a URL."""
+    return f"{next(_snowflake):016x}"
 
 
 def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:

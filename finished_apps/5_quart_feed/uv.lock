@@ -483,6 +483,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "quart" },
     { name = "quart-wtforms" },
+    { name = "snowflake-id" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "wand" },
 ]
@@ -497,8 +498,18 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "quart", specifier = ">=0.20" },
     { name = "quart-wtforms", specifier = ">=1.0.3" },
+    { name = "snowflake-id", specifier = ">=1.0.2" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
     { name = "wand", specifier = ">=0.6" },
+]
+
+[[package]]
+name = "snowflake-id"
+version = "1.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/d0/91bd3d2e54ea849e8c4e73681ef75c1c93f37a8c9f0627b1553522267e08/snowflake_id-1.0.2.tar.gz", hash = "sha256:4a4cd49508599aaa16488311f4b9121e9ac3bac57edff3e9f71b1d79086dbfe8", size = 4497, upload-time = "2024-04-17T13:36:05.552Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/41/a4/ee0bdba1d1e98db21166381559d0061d752bbf66af2dd1cbbe4c2afdc4fa/snowflake_id-1.0.2-py3-none-any.whl", hash = "sha256:c3142752ed334b9d4632739a704461d13e97aa6fa71b65d5329829b4b5cc058c", size = 4795, upload-time = "2024-04-17T13:36:03.898Z" },
 ]
 
 [[package]]

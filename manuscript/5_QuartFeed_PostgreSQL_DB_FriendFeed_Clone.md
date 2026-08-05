@@ -1833,80 +1833,51 @@ Each row is one image belonging to a post, with the same timestamp `image_id` tr
 
 [Save the file](https://fmze.co/fftq-5.8.1).
 
-Now those two URL pieces, the `uid` and the slug. Both belong in `utils/helpers.py`, and both are small, but the `uid` carries a requirement worth stating precisely: it has to be unique. Not unique most of the time, not unique unless we get unlucky. Unique, every time, for as long as this application runs. The tempting shortcut is to generate a handful of random characters and let the database's UNIQUE index catch a repeat, but think about what that actually does the day it fires. The insert raises, the transaction rolls back, and someone loses a post to an error they can do nothing about. Uniqueness by luck, with a crash as the fallback, is not a design. So let's build an id that cannot collide in the first place. Four new imports at the very top of the file:
+Now those two URL pieces, the `uid` and the slug. Both belong in `utils/helpers.py`, and both are small, but the `uid` carries a requirement worth stating precisely: it has to be unique. Not unique most of the time, not unique unless we get unlucky. Unique, every time, for as long as this application runs. The tempting shortcut is to generate a handful of random characters and let the database's UNIQUE index catch a repeat, but think about what that does the day it fires. The insert raises, the transaction rolls back, and someone loses a post to an error they can do nothing about. Uniqueness by luck, with a crash as the fallback, is not a design.
+
+The good news is that this problem was solved a long time ago and solved well, so we are not going to write the solution ourselves. Twitter needed ids that were unique across many machines without any of them stopping to ask a central authority for the next number, and the scheme they published is called a Snowflake. It is well understood, widely used, and there is a small maintained Python package for it. Reaching for that instead of hand-writing a bit-twiddling generator is the professional instinct, because the code you do not write is code you do not have to test, debug, or get subtly wrong at three in the morning. Add it to `pyproject.toml`:
+
+{lang=toml,line-numbers=on,starting-line-number=16}
+```
+    "snowflake-id>=1.0.2",
+```
+
+The container builds its virtual environment at image build time, so a new dependency means a new image before the application can import it:
+
+{lang=bash,line-numbers=off}
+```
+$ docker compose build web
+```
+
+So what actually is a Snowflake? It is a single sixty-four bit number with its bits divided into three fields: a millisecond timestamp, an instance number saying which process minted it, and a sequence counter for ids minted during the same millisecond. That is the whole idea. Two processes cannot collide because their instance numbers differ, and a process cannot collide with itself because the sequence advances within a millisecond and the clock advances between them. Uniqueness is therefore structural: it holds because of how the number is built, not because we got lucky. The UNIQUE index on the column stays exactly where it is, but it goes back to being a backstop, which is what a constraint is supposed to be.
+
+![A Snowflake packs a millisecond timestamp, an instance number, and a per-millisecond sequence into one 64-bit number, so two processes minting ids at the same instant still cannot collide.](images/5.8-scene4-img1.png)
+
+Two of the imports at the top of `utils/helpers.py` are new, plus the generator itself from the package we just installed:
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
 import os
 import re
-import string
-import time
+from functools import wraps
+from typing import Any, Callable, Optional
+
+from quart import current_app, redirect, request, session, url_for
+from snowflake import SnowflakeGenerator
 ```
 
-The scheme we want is the one Twitter built for this exact problem, and it's called a Snowflake. The insight is that if you can't stop and ask a central authority for the next id, you assemble one out of the three things every process already knows on its own: what time it is, which process it is, and how many ids it has handed out during the current millisecond. Pack those into a single sixty-four bit integer and no other process can produce the same value, because no other process shares all three. Here are the field widths and the generator itself:
+And the helpers themselves, at the bottom of the file:
 
-{lang=python,line-numbers=on,starting-line-number=43}
+{lang=python,line-numbers=on,starting-line-number=42}
 ```
-SNOWFLAKE_EPOCH_MS = 1_704_067_200_000  # 2024-01-01T00:00:00Z
-_WORKER_ID_BITS = 10
-_SEQUENCE_BITS = 12
-_MAX_WORKER_ID = (1 << _WORKER_ID_BITS) - 1
-_MAX_SEQUENCE = (1 << _SEQUENCE_BITS) - 1
-
-
-class SnowflakeGenerator:
-    """Twitter's id scheme: 41 bits of milliseconds, 10 of worker, 12 of sequence."""
-
-    def __init__(self, worker_id: int, epoch_ms: int = SNOWFLAKE_EPOCH_MS) -> None:
-        if not 0 <= worker_id <= _MAX_WORKER_ID:
-            raise ValueError(f"worker_id must be between 0 and {_MAX_WORKER_ID}")
-        self.worker_id = worker_id
-        self.epoch_ms = epoch_ms
-        self._sequence = 0
-        self._last_ms = -1
-
-    def next_id(self) -> int:
-        now_ms = int(time.time() * 1000)
-
-        if now_ms < self._last_ms:
-            drift = self._last_ms - now_ms
-            raise RuntimeError(f"clock moved backwards {drift}ms, refusing to mint")
-
-        if now_ms == self._last_ms:
-            self._sequence = (self._sequence + 1) & _MAX_SEQUENCE
-            while self._sequence == 0 and now_ms <= self._last_ms:
-                now_ms = int(time.time() * 1000)
-        else:
-            self._sequence = 0
-
-        self._last_ms = now_ms
-        return (
-            ((now_ms - self.epoch_ms) << (_WORKER_ID_BITS + _SEQUENCE_BITS))
-            | (self.worker_id << _SEQUENCE_BITS)
-            | self._sequence
-        )
-```
-
-Read `next_id` from the top and every line is defending the same promise. The timestamp is milliseconds counted from an epoch we picked ourselves, the start of 2024, which is what keeps forty-one bits good for about seventy years instead of running out. If the clock has gone backwards, which happens for real when a machine syncs its time, we refuse: minting now could repeat an id we already handed out, and a loud error is enormously better than a silent duplicate. If we're still inside the same millisecond as the last call, the sequence counter advances, giving us four thousand and ninety-six ids per millisecond per worker, and on the rare occasion we exhaust even that, we spin until the clock ticks over rather than wrap around onto ids we've already issued. A new millisecond resets the sequence. Then the three fields are shifted into their slots and combined. The result is that uniqueness is now structural: it holds because of how the number is built, not because we got lucky. The UNIQUE index on the column stays exactly where it is, but it has been demoted from being the guarantee to being a backstop, which is what a constraint should be.
-
-{lang=python,line-numbers=on,starting-line-number=83}
-```
-_BASE62 = string.digits + string.ascii_uppercase + string.ascii_lowercase
-_snowflake = SnowflakeGenerator(worker_id=int(os.environ.get("WORKER_ID", "0")))
-
-
-def _base62(number: int) -> str:
-    """Encode a non-negative integer as base62, shortest form."""
-    digits = []
-    while number:
-        number, remainder = divmod(number, 62)
-        digits.append(_BASE62[remainder])
-    return "".join(reversed(digits)) or _BASE62[0]
+# Every process minting ids needs its OWN instance number, or two of them
+# will eventually agree on a millisecond and a sequence.
+_snowflake = SnowflakeGenerator(int(os.environ.get("INSTANCE_ID", "0")))
 
 
 def generate_uid() -> str:
-    """The post's public id: a Snowflake, base62 encoded so it fits in a URL."""
-    return _base62(_snowflake.next_id())
+    """The post's public id: a Snowflake, hex encoded so it fits in a URL."""
+    return f"{next(_snowflake):016x}"
 
 
 def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
@@ -1916,7 +1887,9 @@ def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
     return slug or "post"
 ```
 
-A sixty-four bit number written out in decimal runs to nineteen digits, which makes for a miserable URL, so `_base62` re-writes it using digits and both cases of the alphabet and gets us down to ten or eleven characters. Two properties come along for free and both matter. Because the timestamp sits in the high bits, ids sort by creation time, so ordering by id is ordering by age, and new rows land at the right-hand edge of the index instead of scattering across it. The `WORKER_ID` environment variable is the one thing you must set deliberately: every process minting ids needs its own, or two of them will eventually agree on a millisecond and a sequence number. One caveat, and it's the honest one: a Snowflake is not a secret. Anyone can read the timestamp back out of it and guess at its neighbours, exactly as they can with the ids in real twitter.com status URLs. That's fine for identifying a public post, and it's completely wrong anywhere you need a token nobody can guess. The slug is the easy half: `slugify` lowercases the message, strips the punctuation, and keeps the first few words. It's cosmetic, there for readers and search engines, and only the `uid` is ever used for lookup, which buys us a neat trick later. If the slug in the URL is stale or missing, we can redirect to the correct one instead of returning a 404.
+The generator is an iterator, so `next()` on it hands back the next id, and three details in those few lines are worth pausing on. `INSTANCE_ID` is the one thing you must set deliberately in production, because every process that mints ids needs its own. The hex formatting turns a nineteen digit number into sixteen characters, which is a far kinder URL and happens to fit the column exactly. And because the timestamp lives in the high bits and the width is fixed, those sixteen characters sort chronologically as text, so ordering by id is ordering by age. One honest caveat: a Snowflake is not a secret. Anyone can read the timestamp back out of it and guess at its neighbours, exactly as they can with the ids in real twitter.com status URLs. That is fine for identifying a public post and completely wrong anywhere you need a token nobody can guess. The slug is the easy half: `slugify` lowercases the message, strips the punctuation, and keeps the first few words. It is cosmetic, there for readers and search engines, and only the `uid` is ever used for lookup, which buys us a neat trick later. If the slug in the URL is stale or missing, we can redirect to the correct one instead of returning a 404.
+
+![A permalink has two parts: the Snowflake uid that identifies the post, and the slug that exists only for readers and search engines.](images/5.8-scene4-img2.png)
 
 [Save the file](https://fmze.co/fftq-5.8.2).
 
@@ -1947,7 +1920,7 @@ It's the same Wand pattern as before, but instead of cropping to a square, `tran
 
 Those files land in `static/uploads/posts/`, named `{post_id}.{image_id}.xlg.png`, and the templates are going to need their URL. That's one more helper, at the bottom of `utils/helpers.py`:
 
-{lang=python,line-numbers=on,starting-line-number=108}
+{lang=python,line-numbers=on,starting-line-number=59}
 ```
 def post_image_url(post_id: int, image_id: int) -> str:
     """URL for a post image, written by image_height_transform."""
@@ -2273,7 +2246,9 @@ The form posts to `create_post` and carries `enctype="multipart/form-data"`, whi
 
 [Save the file](https://fmze.co/fftq-5.8.9).
 
-Now let's get the database caught up with the models we just wrote. Rebuild the web image so the container is running our new code, then ask Alembic to compare the models against the database and write the migration for us. It finds two tables it has never seen before and generates a revision that creates them, and the upgrade applies it: the post and post image tables land in Postgres, and the app is ready to take its first post.
+Now let's get the database caught up with the models we just wrote. First, rebuild the web image so the container is running our new code.
+
+Then ask Alembic to compare the models against the database and write the migration for us. It finds two tables it has never seen before and generates a revision that creates them, and the upgrade applies it: the post and post image tables land in Postgres, and the app is ready to take its first post.
 
 {lang=bash,line-numbers=off}
 ```

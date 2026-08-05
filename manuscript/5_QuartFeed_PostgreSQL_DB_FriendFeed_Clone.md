@@ -1835,25 +1835,27 @@ Each row is one image belonging to a post, with the same timestamp `image_id` tr
 
 Now those two URL pieces, the `uid` and the slug. Both belong in `utils/helpers.py`, and both are small, but the `uid` carries a requirement worth stating precisely: it has to be unique. Not unique most of the time, not unique unless we get unlucky. Unique, every time, for as long as this application runs. The tempting shortcut is to generate a handful of random characters and let the database's UNIQUE index catch a repeat, but think about what that does the day it fires. The insert raises, the transaction rolls back, and someone loses a post to an error they can do nothing about. Uniqueness by luck, with a crash as the fallback, is not a design.
 
-The good news is that this problem was solved a long time ago and solved well, so we are not going to write the solution ourselves. Twitter needed ids that were unique across many machines without any of them stopping to ask a central authority for the next number, and the scheme they published is called a Snowflake. It is well understood, widely used, and there is a small maintained Python package for it. Reaching for that instead of hand-writing a bit-twiddling generator is the professional instinct, because the code you do not write is code you do not have to test, debug, or get subtly wrong at three in the morning. Add it to `pyproject.toml`:
+The good news is that this problem was solved a long time ago and solved well, so we are not going to write the solution ourselves. Twitter needed ids that were unique across many machines without any of them stopping to ask a central authority for the next number, and the scheme they published is called a Snowflake. It is well understood, widely used, and there is a small maintained Python package for it. Reaching for that instead of hand-writing a bit-twiddling generator is the professional instinct, because the code you do not write is code you do not have to test, debug, or get subtly wrong at three in the morning. Declare it the same way we declare every package:
 
-{lang=toml,line-numbers=on,starting-line-number=16}
+{lang=bash,line-numbers=off}
 ```
-    "snowflake-id>=1.0.2",
+$ uv add --no-sync snowflake-id
 ```
 
-The container builds its virtual environment at image build time, so a new dependency means a new image before the application can import it:
+Then rebuild the web image so the package lands inside the container:
 
 {lang=bash,line-numbers=off}
 ```
 $ docker compose build web
 ```
 
+`uv add` writes the dependency into `pyproject.toml` for us, so we never hand-edit that list and never guess at a version, and it pins the exact build in `uv.lock` so every machine that builds this project gets the same one.
+
 So what actually is a Snowflake? It is a single sixty-four bit number with its bits divided into three fields: a millisecond timestamp, an instance number saying which process minted it, and a sequence counter for ids minted during the same millisecond. That is the whole idea. Two processes cannot collide because their instance numbers differ, and a process cannot collide with itself because the sequence advances within a millisecond and the clock advances between them. Uniqueness is therefore structural: it holds because of how the number is built, not because we got lucky. The UNIQUE index on the column stays exactly where it is, but it goes back to being a backstop, which is what a constraint is supposed to be.
 
 ![A Snowflake packs a millisecond timestamp, an instance number, and a per-millisecond sequence into one 64-bit number, so two processes minting ids at the same instant still cannot collide.](images/5.8-scene4-img1.png)
 
-Two of the imports at the top of `utils/helpers.py` are new, plus the generator itself from the package we just installed:
+Wiring it into `utils/helpers.py` takes two lines at the top, `os` for the instance number and the generator itself from the package we just installed:
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -1866,7 +1868,7 @@ from quart import current_app, redirect, request, session, url_for
 from snowflake import SnowflakeGenerator
 ```
 
-And the helpers themselves, at the bottom of the file:
+And the two helpers at the bottom of the same file:
 
 {lang=python,line-numbers=on,starting-line-number=42}
 ```
@@ -1887,7 +1889,7 @@ def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
     return slug or "post"
 ```
 
-The generator is an iterator, so `next()` on it hands back the next id, and three details in those few lines are worth pausing on. `INSTANCE_ID` is the one thing you must set deliberately in production, because every process that mints ids needs its own. The hex formatting turns a nineteen digit number into sixteen characters, which is a far kinder URL and happens to fit the column exactly. And because the timestamp lives in the high bits and the width is fixed, those sixteen characters sort chronologically as text, so ordering by id is ordering by age. One honest caveat: a Snowflake is not a secret. Anyone can read the timestamp back out of it and guess at its neighbours, exactly as they can with the ids in real twitter.com status URLs. That is fine for identifying a public post and completely wrong anywhere you need a token nobody can guess. The slug is the easy half: `slugify` lowercases the message, strips the punctuation, and keeps the first few words. It is cosmetic, there for readers and search engines, and only the `uid` is ever used for lookup, which buys us a neat trick later. If the slug in the URL is stale or missing, we can redirect to the correct one instead of returning a 404.
+The generator is an iterator, so `next()` on it hands back the next id, and that one line is the whole of what we would otherwise have written by hand. Three details are worth pausing on. `INSTANCE_ID` is the one thing you must set deliberately in production, because every process that mints ids needs its own. The hex formatting turns a nineteen digit number into sixteen characters, which is a far kinder URL and happens to fit the column exactly. And because the timestamp lives in the high bits and the width is fixed, those sixteen characters sort chronologically as text, so ordering by id is ordering by age. One honest caveat: a Snowflake is not a secret. Anyone can read the timestamp back out of it and guess at its neighbours, exactly as they can with the ids in real twitter.com status URLs. That is fine for identifying a public post and completely wrong anywhere you need a token nobody can guess. The slug is the easy half: `slugify` lowercases the message, strips the punctuation, and keeps the first few words. It is cosmetic, there for readers and search engines, and only the `uid` is ever used for lookup, which buys us a neat trick later. If the slug in the URL is stale or missing, we can redirect to the correct one instead of returning a 404.
 
 ![A permalink has two parts: the Snowflake uid that identifies the post, and the slug that exists only for readers and search engines.](images/5.8-scene4-img2.png)
 

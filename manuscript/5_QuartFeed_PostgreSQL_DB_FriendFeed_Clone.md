@@ -2257,7 +2257,15 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "create 
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Write a post, attach a photo. It shows up on your home page with its image scaled to a tidy height, and clicking a timestamp takes you to that post's permalink. Notice the slug sitting after the post id: misspell it, or drop it entirely, and the app answers with a 301 straight back to this canonical URL, which is exactly what we designed for. We have content. Now let's make it flow between users.
+Let's watch the whole thing work. Boot the app, register, and log in.
+
+Write a post, attach a photo.
+
+It shows up on your home page with its image scaled to a tidy height, and clicking a timestamp takes you to that post's permalink.
+
+Notice the slug sitting after the post id: misspell it, or drop it entirely, and the app answers with a 301 straight back to this canonical URL, which is exactly what we designed for.
+
+We have content. Now let's make it flow between users.
 
 ## The Feed: Fan-out on Write <!-- 5.9 -->
 

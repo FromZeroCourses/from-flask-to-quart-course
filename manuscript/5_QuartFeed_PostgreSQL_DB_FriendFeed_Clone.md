@@ -1853,8 +1853,6 @@ $ docker compose build web
 
 So what actually is a Snowflake? It is a single sixty-four bit number with its bits divided into three fields: a millisecond timestamp, an instance number saying which process minted it, and a sequence counter for ids minted during the same millisecond. That is the whole idea. Two processes cannot collide because their instance numbers differ, and a process cannot collide with itself because the sequence advances within a millisecond and the clock advances between them. Uniqueness is therefore structural: it holds because of how the number is built, not because we got lucky. The UNIQUE index on the column stays exactly where it is, but it goes back to being a backstop, which is what a constraint is supposed to be.
 
-![A Snowflake packs a millisecond timestamp, an instance number, and a per-millisecond sequence into one 64-bit number, so two processes minting ids at the same instant still cannot collide.](images/5.8-scene4-img1.png)
-
 Wiring it into `utils/helpers.py` takes two lines at the top, `os` for the instance number and the generator itself from the package we just installed:
 
 {lang=python,line-numbers=on,starting-line-number=1}

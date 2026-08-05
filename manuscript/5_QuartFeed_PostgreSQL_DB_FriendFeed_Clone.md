@@ -2137,11 +2137,37 @@ from post.models import post_table, post_image_table  # noqa: F401
 
 [Save the file](https://fmze.co/fftq-5.8.7).
 
-Two templates left, and we'll do the permalink page first so those timestamp links have somewhere to land. It's the simpler of the two: the post card on its own, with no form wrapped around it, plus a way back.
+Two templates left, and before we write either one, notice what they have in common. The permalink page shows a post. The home page shows a list of posts. That is the same card twice, and the moment you write it twice you have signed up to change it twice, forget the second one, and ship a feed whose cards drifted away from the permalink's. So we write the card ONCE, in a partial, and both pages include it. Create `templates/post/_post_card.html`:
 
-![The permalink page is one card plus a way back, with no post form wrapped around it.](images/5.8-scene14-img2.png)
+{lang=html,line-numbers=on}
+```
+<div class="card mb-3">
+    <div class="card-body">
+        <p class="mb-1">{{ post.message }}</p>
+        {% if post.images %}
+        <div class="d-flex gap-2 mb-2">
+            {% for img in post.images %}
+            <img src="{{ img.url }}" alt="post image"
+                style="height: 200px; width: auto; border-radius: 6px;">
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if post.permalink %}
+        <a href="{{ post.permalink }}" class="small text-muted">
+            {{ post.created.strftime('%b %d, %Y %H:%M') }}
+        </a>
+        {% else %}
+        <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
+        {% endif %}
+    </div>
+</div>
+```
 
-![A linked timestamp in the feed needs a page to land on, and that page is the permalink.](images/5.8-scene14-img1.png)
+A partial is just a template with no page around it, meant to be included. The leading underscore is a convention, not a rule: it tells the next person that this file is a fragment and never a page in its own right. It draws the message, then any images at their natural width and a fixed two-hundred-pixel height, then the timestamp. That last `if` is the only thing the two pages disagree about. In a feed the timestamp is the link to the post's permalink, and on the permalink page there is nowhere to go, because you are already there, so it renders as plain text. One card, one place to change it, and the difference is spelled out where you can see it.
+
+![One card partial, included by both pages: change it once and the feed and the permalink stay in step.](images/5.8-scene14-img1.png)
+
+Now the permalink page itself is almost nothing. Create `templates/post/detail.html`:
 
 {lang=html,line-numbers=on}
 ```
@@ -2156,20 +2182,7 @@ Two templates left, and we'll do the permalink page first so those timestamp lin
 <div class="row">
     <div class="col-md-6 offset-md-3">
 
-        <div class="card mb-3">
-            <div class="card-body">
-                <p class="mb-1">{{ post.message }}</p>
-                {% if post.images %}
-                <div class="d-flex gap-2 mb-2">
-                    {% for img in post.images %}
-                    <img src="{{ img.url }}" alt="post image"
-                        style="height: 200px; width: auto; border-radius: 6px;">
-                    {% endfor %}
-                </div>
-                {% endif %}
-                <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
-            </div>
-        </div>
+        {% include "post/_post_card.html" %}
 
         <a href="{{ url_for('post_app.home') }}">&larr; Back home</a>
 
@@ -2179,9 +2192,9 @@ Two templates left, and we'll do the permalink page first so those timestamp lin
 {% endblock %}
 ```
 
-Create `templates/post/detail.html`. It extends `base.html`, includes the navbar, and then draws a single card holding the post's message and any images attached to it:
+It extends `base.html`, includes the navbar, drops in the card, and offers a way back. It is a real page with a real address that search engines will index, which is why it carries the navbar: someone arriving here from a search result needs somewhere to go next. The card itself it does not own.
 
-Here the timestamp is plain text rather than a link, because on the permalink page you're already at the address it would point to.
+![The permalink page is one card plus a way back, with no post form wrapped around it.](images/5.8-scene14-img2.png)
 
 [Save the file](https://fmze.co/fftq-5.8.8).
 
@@ -2218,22 +2231,7 @@ Now the home page. `templates/post/home.html` is still the "the friend feed land
         </div>
 
         {% for post in posts %}
-        <div class="card mb-3">
-            <div class="card-body">
-                <p class="mb-1">{{ post.message }}</p>
-                {% if post.images %}
-                <div class="d-flex gap-2 mb-2">
-                    {% for img in post.images %}
-                    <img src="{{ img.url }}" alt="post image"
-                        style="height: 200px; width: auto; border-radius: 6px;">
-                    {% endfor %}
-                </div>
-                {% endif %}
-                <a href="{{ post.permalink }}" class="small text-muted">
-                    {{ post.created.strftime('%b %d, %Y %H:%M') }}
-                </a>
-            </div>
-        </div>
+        {% include "post/_post_card.html" %}
         {% else %}
         <p class="text-muted">Nothing here yet &mdash; write your first post.</p>
         {% endfor %}
@@ -2244,7 +2242,7 @@ Now the home page. `templates/post/home.html` is still the "the friend feed land
 {% endblock %}
 ```
 
-The form posts to `create_post` and carries `enctype="multipart/form-data"`, which is what lets a file ride along with the text, and `render_field` is the same macro we've used since the registration form. Each card prints the message, then any images at their natural width and a fixed two-hundred-pixel height, then the timestamp, which is the link to the post's permalink. That `else` branch on the `for` loop is a Jinja convenience: it renders when the list is empty, so a brand-new account sees a nudge instead of a blank page.
+The form posts to `create_post` and carries `enctype="multipart/form-data"`, which is what lets a file ride along with the text, and `render_field` is the same macro we've used since the registration form. Then the loop, and this is the payoff for having written the card once: the body of the loop is a single `include`. Each pass sets `post`, the partial renders that post, and because the feed's posts carry a `permalink` their timestamps come out as links. That `else` branch on the `for` loop is a Jinja convenience: it renders when the list is empty, so a brand-new account sees a nudge instead of a blank page.
 
 [Save the file](https://fmze.co/fftq-5.8.9).
 
@@ -2445,7 +2443,7 @@ It reads an `offset` off the query string, defaulting to zero and shrugging off 
 
 [Save the file](https://fmze.co/fftq-5.9.5)
 
-Both the home page and that endpoint have to render a post card, and neither of them should own the markup twice. So let's pull the card into a partial of its own. Create `templates/post/_post_card.html`:
+Both the home page and that endpoint render post cards, and thanks to the partial we wrote back in the posting lesson, neither of them owns that markup. We only have to change it in one place, which is exactly the payoff we set it up for. A feed shows other people's posts, so the card now has to say who wrote each one. Open `templates/post/_post_card.html` and wrap the body in an author row:
 
 {lang=html,line-numbers=on}
 ```
@@ -2466,16 +2464,20 @@ Both the home page and that endpoint have to render a post card, and neither of 
                     {% endfor %}
                 </div>
                 {% endif %}
+                {% if post.permalink %}
                 <a href="{{ post.permalink }}" class="small text-muted">
                     {{ post.created.strftime('%b %d, %Y %H:%M') }}
                 </a>
+                {% else %}
+                <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 ```
 
-It's the card we already had, with the author's avatar and username added in front of the message, because on your own page every post was obviously yours and in a feed it never is. The `data-post-id` attribute looks decorative, but it's the hook the scroll script will count to work out the next offset.
+The message, the images and the timestamp are untouched: what's new is the avatar and the username in front of them, because on your own page every post was obviously yours and in a feed it never is. One edit, and the permalink page picks up the author line too, without our going near `detail.html`. The `data-post-id` attribute looks decorative, but it's the hook the scroll script will count to work out the next offset.
 
 [Save the file](https://fmze.co/fftq-5.9.6)
 

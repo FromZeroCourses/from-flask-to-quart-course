@@ -1835,25 +1835,27 @@ Each row is one image belonging to a post, with the same timestamp `image_id` tr
 
 Now those two URL pieces, the `uid` and the slug. Both belong in `utils/helpers.py`, and both are small, but the `uid` carries a requirement worth stating precisely: it has to be unique. Not unique most of the time, not unique unless we get unlucky. Unique, every time, for as long as this application runs. The tempting shortcut is to generate a handful of random characters and let the database's UNIQUE index catch a repeat, but think about what that does the day it fires. The insert raises, the transaction rolls back, and someone loses a post to an error they can do nothing about. Uniqueness by luck, with a crash as the fallback, is not a design.
 
-The good news is that this problem was solved a long time ago and solved well, so we are not going to write the solution ourselves. Twitter needed ids that were unique across many machines without any of them stopping to ask a central authority for the next number, and the scheme they published is called a Snowflake. It is well understood, widely used, and there is a small maintained Python package for it. Reaching for that instead of hand-writing a bit-twiddling generator is the professional instinct, because the code you do not write is code you do not have to test, debug, or get subtly wrong at three in the morning. Add it to `pyproject.toml`:
+The good news is that this problem was solved a long time ago and solved well, so we are not going to write the solution ourselves. Twitter needed ids that were unique across many machines without any of them stopping to ask a central authority for the next number, and the scheme they published is called a Snowflake. It is well understood, widely used, and there is a small maintained Python package for it. Reaching for that instead of hand-writing a bit-twiddling generator is the professional instinct, because the code you do not write is code you do not have to test, debug, or get subtly wrong at three in the morning. Declare it the same way we declare every package:
 
-{lang=toml,line-numbers=on,starting-line-number=16}
+{lang=bash,line-numbers=off}
 ```
-    "snowflake-id>=1.0.2",
+$ uv add --no-sync snowflake-id
 ```
 
-The container builds its virtual environment at image build time, so a new dependency means a new image before the application can import it:
+Then rebuild the web image so the package lands inside the container:
 
 {lang=bash,line-numbers=off}
 ```
 $ docker compose build web
 ```
 
+`uv add` writes the dependency into `pyproject.toml` for us, so we never hand-edit that list and never guess at a version, and it pins the exact build in `uv.lock` so every machine that builds this project gets the same one.
+
 So what actually is a Snowflake? It is a single sixty-four bit number with its bits divided into three fields: a millisecond timestamp, an instance number saying which process minted it, and a sequence counter for ids minted during the same millisecond. That is the whole idea. Two processes cannot collide because their instance numbers differ, and a process cannot collide with itself because the sequence advances within a millisecond and the clock advances between them. Uniqueness is therefore structural: it holds because of how the number is built, not because we got lucky. The UNIQUE index on the column stays exactly where it is, but it goes back to being a backstop, which is what a constraint is supposed to be.
 
 ![A Snowflake packs a millisecond timestamp, an instance number, and a per-millisecond sequence into one 64-bit number, so two processes minting ids at the same instant still cannot collide.](images/5.8-scene4-img1.png)
 
-Two of the imports at the top of `utils/helpers.py` are new, plus the generator itself from the package we just installed:
+Wiring it into `utils/helpers.py` takes two lines at the top, `os` for the instance number and the generator itself from the package we just installed:
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -1866,7 +1868,7 @@ from quart import current_app, redirect, request, session, url_for
 from snowflake import SnowflakeGenerator
 ```
 
-And the helpers themselves, at the bottom of the file:
+And the two helpers at the bottom of the same file:
 
 {lang=python,line-numbers=on,starting-line-number=42}
 ```
@@ -1887,7 +1889,7 @@ def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
     return slug or "post"
 ```
 
-The generator is an iterator, so `next()` on it hands back the next id, and three details in those few lines are worth pausing on. `INSTANCE_ID` is the one thing you must set deliberately in production, because every process that mints ids needs its own. The hex formatting turns a nineteen digit number into sixteen characters, which is a far kinder URL and happens to fit the column exactly. And because the timestamp lives in the high bits and the width is fixed, those sixteen characters sort chronologically as text, so ordering by id is ordering by age. One honest caveat: a Snowflake is not a secret. Anyone can read the timestamp back out of it and guess at its neighbours, exactly as they can with the ids in real twitter.com status URLs. That is fine for identifying a public post and completely wrong anywhere you need a token nobody can guess. The slug is the easy half: `slugify` lowercases the message, strips the punctuation, and keeps the first few words. It is cosmetic, there for readers and search engines, and only the `uid` is ever used for lookup, which buys us a neat trick later. If the slug in the URL is stale or missing, we can redirect to the correct one instead of returning a 404.
+The generator is an iterator, so `next()` on it hands back the next id, and that one line is the whole of what we would otherwise have written by hand. Three details are worth pausing on. `INSTANCE_ID` is the one thing you must set deliberately in production, because every process that mints ids needs its own. The hex formatting turns a nineteen digit number into sixteen characters, which is a far kinder URL and happens to fit the column exactly. And because the timestamp lives in the high bits and the width is fixed, those sixteen characters sort chronologically as text, so ordering by id is ordering by age. One honest caveat: a Snowflake is not a secret. Anyone can read the timestamp back out of it and guess at its neighbours, exactly as they can with the ids in real twitter.com status URLs. That is fine for identifying a public post and completely wrong anywhere you need a token nobody can guess. The slug is the easy half: `slugify` lowercases the message, strips the punctuation, and keeps the first few words. It is cosmetic, there for readers and search engines, and only the `uid` is ever used for lookup, which buys us a neat trick later. If the slug in the URL is stale or missing, we can redirect to the correct one instead of returning a 404.
 
 ![A permalink has two parts: the Snowflake uid that identifies the post, and the slug that exists only for readers and search engines.](images/5.8-scene4-img2.png)
 
@@ -2135,11 +2137,37 @@ from post.models import post_table, post_image_table  # noqa: F401
 
 [Save the file](https://fmze.co/fftq-5.8.7).
 
-Two templates left, and we'll do the permalink page first so those timestamp links have somewhere to land. It's the simpler of the two: the post card on its own, with no form wrapped around it, plus a way back.
+Two templates left, and before we write either one, notice what they have in common. The permalink page shows a post. The home page shows a list of posts. That is the same card twice, and the moment you write it twice you have signed up to change it twice, forget the second one, and ship a feed whose cards drifted away from the permalink's. So we write the card ONCE, in a partial, and both pages include it. Create `templates/post/_post_card.html`:
 
-![The permalink page is one card plus a way back, with no post form wrapped around it.](images/5.8-scene14-img2.png)
+{lang=html,line-numbers=on}
+```
+<div class="card mb-3">
+    <div class="card-body">
+        <p class="mb-1">{{ post.message }}</p>
+        {% if post.images %}
+        <div class="d-flex gap-2 mb-2">
+            {% for img in post.images %}
+            <img src="{{ img.url }}" alt="post image"
+                style="height: 200px; width: auto; border-radius: 6px;">
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% if post.permalink %}
+        <a href="{{ post.permalink }}" class="small text-muted">
+            {{ post.created.strftime('%b %d, %Y %H:%M') }}
+        </a>
+        {% else %}
+        <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
+        {% endif %}
+    </div>
+</div>
+```
 
-![A linked timestamp in the feed needs a page to land on, and that page is the permalink.](images/5.8-scene14-img1.png)
+A partial is just a template with no page around it, meant to be included. The leading underscore is a convention, not a rule: it tells the next person that this file is a fragment and never a page in its own right. It draws the message, then any images at their natural width and a fixed two-hundred-pixel height, then the timestamp. That last `if` is the only thing the two pages disagree about. In a feed the timestamp is the link to the post's permalink, and on the permalink page there is nowhere to go, because you are already there, so it renders as plain text. One card, one place to change it, and the difference is spelled out where you can see it.
+
+![One card partial, included by both pages: change it once and the feed and the permalink stay in step.](images/5.8-scene14-img1.png)
+
+Now the permalink page itself is almost nothing. Create `templates/post/detail.html`:
 
 {lang=html,line-numbers=on}
 ```
@@ -2154,20 +2182,7 @@ Two templates left, and we'll do the permalink page first so those timestamp lin
 <div class="row">
     <div class="col-md-6 offset-md-3">
 
-        <div class="card mb-3">
-            <div class="card-body">
-                <p class="mb-1">{{ post.message }}</p>
-                {% if post.images %}
-                <div class="d-flex gap-2 mb-2">
-                    {% for img in post.images %}
-                    <img src="{{ img.url }}" alt="post image"
-                        style="height: 200px; width: auto; border-radius: 6px;">
-                    {% endfor %}
-                </div>
-                {% endif %}
-                <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
-            </div>
-        </div>
+        {% include "post/_post_card.html" %}
 
         <a href="{{ url_for('post_app.home') }}">&larr; Back home</a>
 
@@ -2177,9 +2192,9 @@ Two templates left, and we'll do the permalink page first so those timestamp lin
 {% endblock %}
 ```
 
-Create `templates/post/detail.html`. It extends `base.html`, includes the navbar, and then draws a single card holding the post's message and any images attached to it:
+It extends `base.html`, includes the navbar, drops in the card, and offers a way back. It is a real page with a real address that search engines will index, which is why it carries the navbar: someone arriving here from a search result needs somewhere to go next. The card itself it does not own.
 
-Here the timestamp is plain text rather than a link, because on the permalink page you're already at the address it would point to.
+![The permalink page is one card plus a way back, with no post form wrapped around it.](images/5.8-scene14-img2.png)
 
 [Save the file](https://fmze.co/fftq-5.8.8).
 
@@ -2216,22 +2231,7 @@ Now the home page. `templates/post/home.html` is still the "the friend feed land
         </div>
 
         {% for post in posts %}
-        <div class="card mb-3">
-            <div class="card-body">
-                <p class="mb-1">{{ post.message }}</p>
-                {% if post.images %}
-                <div class="d-flex gap-2 mb-2">
-                    {% for img in post.images %}
-                    <img src="{{ img.url }}" alt="post image"
-                        style="height: 200px; width: auto; border-radius: 6px;">
-                    {% endfor %}
-                </div>
-                {% endif %}
-                <a href="{{ post.permalink }}" class="small text-muted">
-                    {{ post.created.strftime('%b %d, %Y %H:%M') }}
-                </a>
-            </div>
-        </div>
+        {% include "post/_post_card.html" %}
         {% else %}
         <p class="text-muted">Nothing here yet &mdash; write your first post.</p>
         {% endfor %}
@@ -2242,7 +2242,7 @@ Now the home page. `templates/post/home.html` is still the "the friend feed land
 {% endblock %}
 ```
 
-The form posts to `create_post` and carries `enctype="multipart/form-data"`, which is what lets a file ride along with the text, and `render_field` is the same macro we've used since the registration form. Each card prints the message, then any images at their natural width and a fixed two-hundred-pixel height, then the timestamp, which is the link to the post's permalink. That `else` branch on the `for` loop is a Jinja convenience: it renders when the list is empty, so a brand-new account sees a nudge instead of a blank page.
+The form posts to `create_post` and carries `enctype="multipart/form-data"`, which is what lets a file ride along with the text, and `render_field` is the same macro we've used since the registration form. Then the loop, and this is the payoff for having written the card once: the body of the loop is a single `include`. Each pass sets `post`, the partial renders that post, and because the feed's posts carry a `permalink` their timestamps come out as links. That `else` branch on the `for` loop is a Jinja convenience: it renders when the list is empty, so a brand-new account sees a nudge instead of a blank page.
 
 [Save the file](https://fmze.co/fftq-5.8.9).
 
@@ -2257,7 +2257,15 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "create 
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Write a post, attach a photo. It shows up on your home page with its image scaled to a tidy height, and clicking a timestamp takes you to that post's permalink. Notice the slug sitting after the post id: misspell it, or drop it entirely, and the app answers with a 301 straight back to this canonical URL, which is exactly what we designed for. We have content. Now let's make it flow between users.
+Let's watch the whole thing work. Boot the app, register, and log in.
+
+Write a post, attach a photo.
+
+It shows up on your home page with its image scaled to a tidy height, and clicking a timestamp takes you to that post's permalink.
+
+Notice the slug sitting after the post id: misspell it, or drop it entirely, and the app answers with a 301 straight back to this canonical URL, which is exactly what we designed for.
+
+We have content. Now let's make it flow between users.
 
 ## The Feed: Fan-out on Write <!-- 5.9 -->
 
@@ -2443,7 +2451,7 @@ It reads an `offset` off the query string, defaulting to zero and shrugging off 
 
 [Save the file](https://fmze.co/fftq-5.9.5)
 
-Both the home page and that endpoint have to render a post card, and neither of them should own the markup twice. So let's pull the card into a partial of its own. Create `templates/post/_post_card.html`:
+Both the home page and that endpoint render post cards, and thanks to the partial we wrote back in the posting lesson, neither of them owns that markup. We only have to change it in one place, which is exactly the payoff we set it up for. A feed shows other people's posts, so the card now has to say who wrote each one. Open `templates/post/_post_card.html` and wrap the body in an author row:
 
 {lang=html,line-numbers=on}
 ```
@@ -2464,16 +2472,20 @@ Both the home page and that endpoint have to render a post card, and neither of 
                     {% endfor %}
                 </div>
                 {% endif %}
+                {% if post.permalink %}
                 <a href="{{ post.permalink }}" class="small text-muted">
                     {{ post.created.strftime('%b %d, %Y %H:%M') }}
                 </a>
+                {% else %}
+                <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 ```
 
-It's the card we already had, with the author's avatar and username added in front of the message, because on your own page every post was obviously yours and in a feed it never is. The `data-post-id` attribute looks decorative, but it's the hook the scroll script will count to work out the next offset.
+The message, the images and the timestamp are untouched: what's new is the avatar and the username in front of them, because on your own page every post was obviously yours and in a feed it never is. One edit, and the permalink page picks up the author line too, without our going near `detail.html`. The `data-post-id` attribute looks decorative, but it's the hook the scroll script will count to work out the next offset.
 
 [Save the file](https://fmze.co/fftq-5.9.6)
 

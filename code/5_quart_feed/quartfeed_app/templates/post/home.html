@@ -27,22 +27,7 @@
         </div>
 
         {% for post in posts %}
-        <div class="card mb-3">
-            <div class="card-body">
-                <p class="mb-1">{{ post.message }}</p>
-                {% if post.images %}
-                <div class="d-flex gap-2 mb-2">
-                    {% for img in post.images %}
-                    <img src="{{ img.url }}" alt="post image"
-                        style="height: 200px; width: auto; border-radius: 6px;">
-                    {% endfor %}
-                </div>
-                {% endif %}
-                <a href="{{ post.permalink }}" class="small text-muted">
-                    {{ post.created.strftime('%b %d, %Y %H:%M') }}
-                </a>
-            </div>
-        </div>
+        {% include "post/_post_card.html" %}
         {% else %}
         <p class="text-muted">Nothing here yet &mdash; write your first post.</p>
         {% endfor %}

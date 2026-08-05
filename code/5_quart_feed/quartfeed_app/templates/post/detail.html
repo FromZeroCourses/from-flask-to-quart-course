@@ -9,20 +9,7 @@
 <div class="row">
     <div class="col-md-6 offset-md-3">
 
-        <div class="card mb-3">
-            <div class="card-body">
-                <p class="mb-1">{{ post.message }}</p>
-                {% if post.images %}
-                <div class="d-flex gap-2 mb-2">
-                    {% for img in post.images %}
-                    <img src="{{ img.url }}" alt="post image"
-                        style="height: 200px; width: auto; border-radius: 6px;">
-                    {% endfor %}
-                </div>
-                {% endif %}
-                <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
-            </div>
-        </div>
+        {% include "post/_post_card.html" %}
 
         <a href="{{ url_for('post_app.home') }}">&larr; Back home</a>
 

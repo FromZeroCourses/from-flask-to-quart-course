@@ -1866,7 +1866,8 @@ And the two helpers at the bottom of the same file:
 
 {lang=python,line-numbers=on,starting-line-number=42}
 ```
-# Every process minting ids needs its OWN instance number.
+# Every process minting ids needs its OWN instance number, or two of them
+# will eventually agree on a millisecond and a sequence.
 _snowflake = SnowflakeGenerator(int(os.environ.get("INSTANCE_ID", "0")))
 
 

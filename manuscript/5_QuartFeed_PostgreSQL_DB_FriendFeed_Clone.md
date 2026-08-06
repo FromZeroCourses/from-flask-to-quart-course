@@ -1816,6 +1816,8 @@ Two columns are new in spirit. The `created` column has a `server_default` of `f
 
 Posts can also carry images, and we want to be ready for more than one someday, so images get their own table. Add it below `post_table`:
 
+![Images live in their own table, one row per image, linked back to its post by a foreign key.](images/5.8-scene2-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=25}
 ```
 post_image_table = Table(

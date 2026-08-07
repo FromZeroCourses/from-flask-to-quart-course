@@ -2163,6 +2163,8 @@ Two templates left, and before we write either one, notice what they have in com
 
 A partial is just a template with no page around it, meant to be included. The leading underscore is a convention, not a rule: it tells the next person that this file is a fragment and never a page in its own right. It draws the message, then any images at their natural width and a fixed two-hundred-pixel height, then the timestamp. That last `if` is the only thing the two pages disagree about. In a feed the timestamp is the link to the post's permalink, and on the permalink page there is nowhere to go, because you are already there, so it renders as plain text. One card, one place to change it, and the difference is spelled out where you can see it.
 
+[Save the file](https://fmze.co/fftq-5.8.8a).
+
 Now the permalink page itself is almost nothing. Create `templates/post/detail.html`:
 
 {lang=html,line-numbers=on}

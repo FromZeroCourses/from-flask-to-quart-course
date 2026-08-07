@@ -2240,7 +2240,7 @@ Now the home page. `templates/post/home.html` is still the "the friend feed land
 {% endblock %}
 ```
 
-The form posts to `create_post` and carries `enctype="multipart/form-data"`, which is what lets a file ride along with the text, and `render_field` is the same macro we've used since the registration form. Then the loop, and this is the payoff for having written the card once: the body of the loop is a single `include`. Each pass sets `post`, the partial renders that post, and because the feed's posts carry a `permalink` their timestamps come out as links. That `else` branch on the `for` loop is a Jinja convenience: it renders when the list is empty, so a brand-new account sees a nudge instead of a blank page.
+The form posts to `create_post` and carries `enctype="multipart/form-data"`, which is what lets a file ride along with the text, and `render_field` is the same macro we've used since the registration form. Then the loop, and this is the payoff for having written the card once: the body of the loop is a single `include`. That `else` branch on the `for` loop is a Jinja convenience: it renders when the list is empty, so a brand-new account sees a nudge instead of a blank page. Each pass sets `post`, the partial renders that post, and because the feed's posts carry a `permalink` their timestamps come out as links.
 
 [Save the file](https://fmze.co/fftq-5.8.9).
 

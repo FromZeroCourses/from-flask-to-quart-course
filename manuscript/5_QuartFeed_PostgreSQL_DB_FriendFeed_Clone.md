@@ -2194,8 +2194,6 @@ Now the permalink page itself is almost nothing. Create `templates/post/detail.h
 
 It extends `base.html`, includes the navbar, drops in the card, and offers a way back. It is a real page with a real address that search engines will index, which is why it carries the navbar: someone arriving here from a search result needs somewhere to go next. The card itself it does not own.
 
-![The permalink page is one card plus a way back, with no post form wrapped around it.](images/5.8-scene14-img2.png)
-
 [Save the file](https://fmze.co/fftq-5.8.8).
 
 Now the home page. `templates/post/home.html` is still the "the friend feed lands here" placeholder, so replace its inner column with the post form and a card per post:

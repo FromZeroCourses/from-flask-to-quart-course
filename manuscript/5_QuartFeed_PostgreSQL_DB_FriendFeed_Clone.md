@@ -1987,7 +1987,7 @@ def _posts_dir() -> Path:
     return Path(current_app.config["UPLOADS_FOLDER"]) / "posts"
 ```
 
-We pull in our new helpers and the fixed-height transform, and add a `_posts_dir` helper pointing at where post images are stored, mirroring the avatars folder.
+Then the rest of the imports: the Quart pieces we need, `insert` and `select` for the queries, the post form, the two post tables, our own helpers, and the fixed-height transform. And finally the blueprint itself, exactly as it was before.
 
 Two small helpers do the groundwork here. The first one points at the folder where a post's uploads were written, so nothing else in the module has to rebuild that path by hand. A post's images live in their own table, so loading them is its own small query. Add both underneath:
 

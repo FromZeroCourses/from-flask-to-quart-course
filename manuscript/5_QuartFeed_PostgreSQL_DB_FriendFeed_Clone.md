@@ -1951,7 +1951,9 @@ class PostForm(QuartForm):
     )
 ```
 
-A required message limited to five hundred characters, and an optional image with the same image-only validation we used for avatars. Nothing new here, which is the point: once you know quart-wtforms, every form looks like this.
+A required message limited to five hundred characters, and an optional image with the same image-only validation we used for avatars.
+
+Nothing new here, which is the point: once you know quart-wtforms, every form looks like this.
 
 [Save the file](https://fmze.co/fftq-5.8.5).
 

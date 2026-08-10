@@ -2295,13 +2295,7 @@ feed_table = Table(
 )
 ```
 
-The key thing to understand is `user_id` here is not the author. It's the feed's owner, the recipient.
-
-One post by a popular user creates many feed rows, one per follower, each with that follower as `user_id`.
-
-The `updated` column is what we sort a feed by.
-
-So the freshest activity floats to the top.
+The key thing to understand is `user_id` here is not the author. It's the feed's owner, the recipient. One post by a popular user creates many feed rows, one per follower, each with that follower as `user_id`. The `updated` column is what we sort a feed by, so the freshest activity floats to the top.
 
 [Save the file](https://fmze.co/fftq-5.9.1)
 

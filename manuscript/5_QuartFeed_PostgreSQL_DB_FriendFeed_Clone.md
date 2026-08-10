@@ -2299,7 +2299,7 @@ The key thing to understand is `user_id` here is not the author. It's the feed's
 
 [Save the file](https://fmze.co/fftq-5.9.1)
 
-Now let's write the fan-out logic in its own file. Create `utils/feed_ops.py`:
+Now let's write the fan-out logic in its own file, and it belongs right next to the rest of the post code, because fanning out is what happens the moment a post is created. Create `post/feed_ops.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -2338,11 +2338,11 @@ Then the local imports, which pick up the `feed` table, the `followers` helper, 
 
 {lang=python,line-numbers=on,starting-line-number=16}
 ```
+from post.feed_ops import fan_out_post
 from post.forms import PostForm
 from post.models import feed_table, post_image_table, post_table
 from relationship.views import followers
 from user.models import user_table
-from utils.feed_ops import fan_out_post
 from utils.helpers import (
     generate_uid,
     image_url,
@@ -2578,7 +2578,7 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "create 
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Restart, then try it with two accounts: log in as one, follow the other, and post from the account being followed. The post appears on the follower's home page, above their own posts, with the author's name and avatar on the card. That's fan-out working: the moment the post was written, a feed row was written for every follower, and reading the feed was one cheap lookup. Scroll to the bottom of a busy account and the next ten cards load themselves. The one thing still missing is immediacy, because a post that arrives while you're looking at the page won't show until you reload. That's the last big piece of QuartFeed, and it's coming.
+Restart and log in as an account that already follows two or three other people. The home page is not your own timeline anymore, it's a real feed: their posts and yours interleaved, newest activity first, and every card now carries the name and avatar of whoever wrote it. That's fan-out working, and the important part is what the page did NOT do to build it. It never looked up who you follow and it never went hunting for their posts. Each of those rows was written the moment its post was created, so reading the feed was one cheap lookup of rows that already had your name on them. Keep scrolling and the next ten cards load themselves as you reach the bottom. (On a brand new database this page starts out empty, and that is expected: your feed only fills as the accounts you already follow write posts, and each of those posts lands here at the moment it is written.) The one thing still missing is immediacy, because a post that arrives while you're looking at the page won't show until you reload. That's the last big piece of QuartFeed, and it's coming.
 
 ## Messages and Feed Tests <!-- 5.10 -->
 
@@ -3010,7 +3010,7 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "feed bu
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Rewrite `utils/feed_ops.py`:
+Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Rewrite `post/feed_ops.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -3071,9 +3071,9 @@ from sqlalchemy import insert, select
 
 from comment.forms import CommentForm
 from comment.models import comment_table
-from utils.feed_ops import bubble_post
-from utils.helpers import login_required
+from post.feed_ops import bubble_post
 from post.models import feed_table
+from utils.helpers import login_required
 from relationship.views import followers
 from utils.sse import ServerSentEvent, broker
 

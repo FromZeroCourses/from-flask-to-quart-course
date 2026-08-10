@@ -2295,7 +2295,13 @@ feed_table = Table(
 )
 ```
 
-The key thing to understand is `user_id` here is not the author. It's the feed's owner, the recipient. One post by a popular user creates many feed rows, one per follower, each with that follower as `user_id`. The `updated` column is what we sort a feed by, so the freshest activity floats to the top.
+The key thing to understand is `user_id` here is not the author. It's the feed's owner, the recipient.
+
+One post by a popular user creates many feed rows, one per follower, each with that follower as `user_id`.
+
+The `updated` column is what we sort a feed by.
+
+So the freshest activity floats to the top.
 
 [Save the file](https://fmze.co/fftq-5.9.1)
 
@@ -2578,7 +2584,7 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "create 
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Restart and log in as an account that already follows two or three other people. The home page is not your own timeline anymore, it's a real feed: their posts and yours interleaved, newest activity first, and every card now carries the name and avatar of whoever wrote it. That's fan-out working, and the important part is what the page did NOT do to build it. It never looked up who you follow and it never went hunting for their posts. Each of those rows was written the moment its post was created, so reading the feed was one cheap lookup of rows that already had your name on them. Keep scrolling and the next ten cards load themselves as you reach the bottom. (On a brand new database this page starts out empty, and that is expected: your feed only fills as the accounts you already follow write posts, and each of those posts lands here at the moment it is written.) The one thing still missing is immediacy, because a post that arrives while you're looking at the page won't show until you reload. That's the last big piece of QuartFeed, and it's coming.
+Restart and log in as an account that already follows two or three other people. The home page is not your own timeline anymore, it's a real feed: their posts and yours interleaved, newest activity first, and every card now carries the name and avatar of whoever wrote it. That's fan-out working, and the important part is what the page did NOT do to build it. It never looked up who you follow and it never went hunting for their posts. Each of those rows was written the moment its post was created, so reading the feed was one cheap lookup of rows that already had your name on them. Keep scrolling and the next ten cards load themselves as you reach the bottom. The one thing still missing is immediacy, because a post that arrives while you're looking at the page won't show until you reload. That's the last big piece of QuartFeed, and it's coming.
 
 ## Messages and Feed Tests <!-- 5.10 -->
 

@@ -2299,7 +2299,7 @@ The key thing to understand is `user_id` here is not the author. It's the feed's
 
 [Save the file](https://fmze.co/fftq-5.9.1)
 
-Now let's write the fan-out logic in its own file. It belongs with the post code, because fanning out is what happens when a post is created and the `feed` table it writes to is declared in `post/models.py`, so create `post/feed_ops.py`:
+Now let's write the fan-out logic in its own file, and it belongs right next to the rest of the post code, because fanning out is what happens the moment a post is created. Create `post/feed_ops.py`:
 
 {lang=python,line-numbers=on}
 ```

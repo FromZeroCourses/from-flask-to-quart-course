@@ -13,11 +13,11 @@ from quart import (
 )
 from sqlalchemy import insert, select
 
+from post.feed_ops import fan_out_post
 from post.forms import PostForm
 from post.models import feed_table, post_image_table, post_table
 from relationship.views import followers
 from user.models import user_table
-from utils.feed_ops import fan_out_post
 from utils.helpers import (
     generate_uid,
     image_url,

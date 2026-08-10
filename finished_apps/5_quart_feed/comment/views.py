@@ -5,10 +5,10 @@ from sqlalchemy import insert, select
 
 from comment.forms import CommentForm
 from comment.models import comment_table
-from utils.feed_ops import bubble_post
-from utils.helpers import login_required
+from post.feed_ops import bubble_post
 from post.models import feed_table
 from post.views import build_post_payload
+from utils.helpers import login_required
 from relationship.views import followers
 from utils.sse import ServerSentEvent, broker
 from user.models import user_table

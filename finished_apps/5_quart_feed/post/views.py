@@ -17,7 +17,6 @@ from quart import (
 from sqlalchemy import func, insert, select
 
 from comment.models import comment_table
-from utils.feed_ops import fan_out_post
 from utils.helpers import (
     generate_uid,
     image_url,
@@ -27,6 +26,7 @@ from utils.helpers import (
 )
 from utils.imaging import image_height_transform
 from like.models import like_table
+from post.feed_ops import fan_out_post
 from post.forms import PostForm
 from post.models import feed_table, post_image_table, post_table
 from relationship.views import followers

@@ -31,7 +31,6 @@ feed_table = Table(
     Column("updated", DateTime(timezone=True), server_default=func.now()),
 )
 
-
 post_image_table = Table(
     "post_image",
     metadata,

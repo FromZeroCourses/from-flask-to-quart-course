@@ -2565,7 +2565,13 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 ```
 
-We use an `IntersectionObserver`, the browser's efficient way to notice when an element scrolls into view, and we point it at the sentinel. The `rootMargin` of two hundred pixels means it fires a little before the sentinel is actually visible, so the next page is usually there by the time you scroll to it. The offset is simply how many cards are on the page already, which is why every card carries `data-post-id`. The `loading` and `done` flags stop us firing a second request while one is in flight, and stop us asking forever once the server answers with nothing.
+We use an `IntersectionObserver`, the browser's efficient way to notice when an element scrolls into view, and we point it at the sentinel.
+
+The `loading` and `done` flags stop us firing a second request while one is in flight, and stop us asking forever once the server answers with nothing.
+
+The offset is simply how many cards are on the page already, which is why every card carries `data-post-id`.
+
+The `rootMargin` of two hundred pixels means it fires a little before the sentinel is actually visible, so the next page is usually there by the time you scroll to it.
 
 [Save the file](https://fmze.co/fftq-5.9.9)
 

@@ -2854,6 +2854,8 @@ These tests don't need `async`, a client, or a fixture, because `linkify` is a p
 
 Run `pytest` again and everything, users, posts, images, and helpers, should be green. Notice how little setup each new file needed: the fixtures we wrote once in the user tests carried the whole way here. That's the payoff of a good `conftest.py`, and it's what makes adding the next round of tests for comments and likes almost free.
 
+![One conftest.py holds the fixtures and every test file reuses them, which is why the next round of tests costs almost nothing.](images/5.10-scene12-img1.png)
+
 ## Going Live: the SSE Broker and EventSource Client <!-- 5.11 -->
 
 This is the lesson the whole chapter has been building toward. We have a feed that fills in when you refresh; now we'll make new posts appear the instant they're written, using the Server Sent Events we introduced at the very start. Time to make that promise real.

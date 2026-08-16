@@ -2664,8 +2664,6 @@ And use it where the message is rendered, in `templates/post/_post_card.html`.
 
 Restart the app and post a message with a link in it. It comes back clickable, and if you paste a stray `<b>` alongside it, that shows up as literal text instead of turning the rest of your feed bold.
 
-[Save the file](https://fmze.co/fftq-5.10.1).
-
 Now for the tests. There's one small thing to update first. Remember that our `create_db` fixture builds tables with `metadata.create_all`, which only builds the tables whose models have been imported. Back in the user tests we only had `user` and `relationship`; now we have posts and the feed, so open `conftest.py` and add their models to the registration list at the top.
 
 {lang=python,line-numbers=on,starting-line-number=13}

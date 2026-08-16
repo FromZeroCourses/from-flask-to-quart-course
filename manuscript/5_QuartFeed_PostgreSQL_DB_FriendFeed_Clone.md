@@ -2634,6 +2634,8 @@ def linkify(text: Optional[str], max_len: int = 40) -> Markup:
 
 Because we wrapped the pattern in parentheses, `re.split` hands back the text and the URLs interleaved, and every odd position in that list is a URL it captured. So the loop can treat the two kinds differently: a URL becomes an anchor tag, and everything else gets escaped and passed through. Notice we escape inside the anchor too, both in the `href` and in the visible text, because a URL is still something a stranger typed. The `max_len` is the one cosmetic touch: a very long link is shortened with an ellipsis for display while the `href` keeps the complete address, so the layout stays tidy and the link still works. The `Markup` on the last line is what makes the whole thing safe rather than reckless. We are not turning escaping off, we are taking responsibility for it.
 
+[Save the file](https://fmze.co/fftq-5.10.1).
+
 Register it as a template filter in `application.py`.
 
 {lang=python,line-numbers=on,starting-line-number=1}

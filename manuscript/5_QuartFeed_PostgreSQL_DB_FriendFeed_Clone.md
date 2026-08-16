@@ -2651,6 +2651,8 @@ from utils.helpers import linkify
     app.add_template_filter(linkify, "linkify")
 ```
 
+[Save the file](https://fmze.co/fftq-5.10.1a).
+
 And use it where the message is rendered, in `templates/post/_post_card.html`.
 
 {lang=html,line-numbers=on,starting-line-number=9}

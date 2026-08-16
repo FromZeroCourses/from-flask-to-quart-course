@@ -3,12 +3,15 @@ import re
 from functools import wraps
 from typing import Any, Callable, Optional
 
+from markupsafe import Markup, escape
 from quart import current_app, redirect, request, session, url_for
 from snowflake import SnowflakeGenerator
 from sqlalchemy import select
 from sqlalchemy.engine import Row
 
 from user.models import user_table
+
+_URL_RE = re.compile(r"(https?://[^\s<]+)")
 
 
 async def get_user_by_username(conn: Any, username: str) -> Optional[Row]:
@@ -59,3 +62,19 @@ def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
 def post_image_url(post_id: int, image_id: int) -> str:
     """URL for a post image, written by image_height_transform."""
     return f"{current_app.config['IMAGE_URL']}/posts/{post_id}.{image_id}.xlg.png"
+
+
+def linkify(text: Optional[str], max_len: int = 40) -> Markup:
+    """Escape ``text`` and turn bare http(s) URLs into links, truncating long ones."""
+    parts = _URL_RE.split(text or "")
+    out = []
+    for i, part in enumerate(parts):
+        if i % 2 == 1:  # a captured URL
+            display = part if len(part) <= max_len else part[: max_len - 1] + "…"
+            out.append(
+                f'<a href="{escape(part)}" target="_blank" '
+                f'rel="noopener">{escape(display)}</a>'
+            )
+        else:
+            out.append(str(escape(part)))
+    return Markup("".join(out))

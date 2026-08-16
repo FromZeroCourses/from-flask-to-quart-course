@@ -1,6 +1,7 @@
 from quart import Quart
 
 from db import get_engine
+from utils.helpers import linkify
 
 
 def create_app(**config_overrides):
@@ -17,6 +18,8 @@ def create_app(**config_overrides):
     app.register_blueprint(user_app)
     app.register_blueprint(relationship_app)
     app.register_blueprint(post_app)
+
+    app.add_template_filter(linkify, "linkify")
 
     @app.before_serving
     async def create_db_conn():

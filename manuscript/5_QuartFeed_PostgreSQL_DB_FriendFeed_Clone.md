@@ -2672,6 +2672,8 @@ from post.models import post_table, feed_table  # noqa: F401
 
 Importing `post.models` registers every table defined there, including `post_image`, so the test database will now build the post, feed, and post-image tables alongside the user ones.
 
+![One import line registers post, feed, and post_image in the same metadata, so create_all builds all three tables in the test database.](images/5.10-scene8-img1.png)
+
 [Save the file](https://fmze.co/fftq-5.10.2).
 
 Now start with `tests/test_post.py`. The first two tests are the heart of the whole app: a post lands in its author's own feed, and a post lands in a follower's feed.

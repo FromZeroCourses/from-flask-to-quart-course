@@ -6,7 +6,7 @@
             <div class="flex-grow-1">
                 <a href="{{ url_for('user_app.profile', username=post.author_username) }}"
                     class="fw-bold">@{{ post.author_username }}</a>
-                <p class="mb-1">{{ post.message }}</p>
+                <p class="mb-1">{{ post.message | linkify }}</p>
                 {% if post.images %}
                 <div class="d-flex gap-2 mb-2">
                     {% for img in post.images %}

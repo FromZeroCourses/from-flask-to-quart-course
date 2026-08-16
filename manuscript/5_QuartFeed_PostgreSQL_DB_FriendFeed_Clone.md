@@ -2828,6 +2828,8 @@ We point `UPLOADS_FOLDER` at pytest's `tmp_path` so the test writes into a throw
 
 Not every test needs the database or the browser. Some of our logic is plain functions, and those are the cheapest and fastest things to test. The `linkify` helper we wrote at the top of this lesson is exactly that shape, and it does two jobs worth pinning down, so let's test it directly. Create `tests/test_helpers.py`.
 
+![A pure function like linkify is the cheapest test to write and the fastest to run: text in, safe HTML out, no database and no browser.](images/5.10-scene11-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
 from utils.helpers import linkify

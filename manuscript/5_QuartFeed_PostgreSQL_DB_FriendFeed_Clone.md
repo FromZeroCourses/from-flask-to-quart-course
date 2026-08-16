@@ -2660,6 +2660,8 @@ And use it where the message is rendered, in `templates/post/_post_card.html`.
                 <p class="mb-1">{{ post.message | linkify }}</p>
 ```
 
+[Save the file](https://fmze.co/fftq-5.10.1b).
+
 Restart the app and post a message with a link in it. It comes back clickable, and if you paste a stray `<b>` alongside it, that shows up as literal text instead of turning the rest of your feed bold.
 
 [Save the file](https://fmze.co/fftq-5.10.1).

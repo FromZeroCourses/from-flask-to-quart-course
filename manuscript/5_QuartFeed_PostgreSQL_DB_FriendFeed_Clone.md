@@ -2584,7 +2584,81 @@ Restart and log in as an account that already follows two or three other people.
 
 We just taught the feed how to fan out on write, and that fan-out is exactly the kind of logic that's easy to break and hard to notice, because it happens behind the scenes. A post shows up, or it doesn't, and if it quietly stops reaching followers we might not see it for weeks. So this lesson locks down posting and the feed. We already built the test harness back in the user tests, so the fixtures carry over unchanged; we just add new test files that reuse them.
 
-There's one small thing to update first. Remember that our `create_db` fixture builds tables with `metadata.create_all`, which only builds the tables whose models have been imported. Back in the user tests we only had `user` and `relationship`; now we have posts and the feed, so open `conftest.py` and add their models to the registration list at the top.
+Before we write a single test, there's a piece of the message rendering we've been putting off. Right now a post's message goes onto the page as plain text, so if somebody types a URL into a post it just sits there, unclickable.
+
+The obvious fix is to find the URLs and wrap them in anchor tags, and that runs straight into the thing quietly keeping our app safe: Jinja escapes everything we render. That is on purpose. Without it, one person posting a `<script>` tag would run their code in every browser that loaded the feed. But escaping is all or nothing per value, so we cannot just mark the message safe and hand it to the template, because that switches escaping off for the whole string, including whatever the user typed around the link.
+
+What we want is narrower. We escape everything ourselves, we build the anchor tags ourselves, and only then do we tell Jinja the result is already safe. Open `utils/helpers.py` and add the import and the pattern near the top.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import os
+import re
+from functools import wraps
+from typing import Any, Callable, Optional
+
+from markupsafe import Markup, escape
+from quart import current_app, redirect, request, session, url_for
+from snowflake import SnowflakeGenerator
+from sqlalchemy import select
+from sqlalchemy.engine import Row
+
+from user.models import user_table
+
+_URL_RE = re.compile(r"(https?://[^\s<]+)")
+```
+
+`markupsafe` already ships with Quart, so there's nothing new to install. `escape` turns the dangerous characters into harmless HTML entities, and `Markup` is the wrapper that tells Jinja this string has already been made safe and should be left alone. The pattern captures anything starting with `http://` or `https://` and running until it hits whitespace or a `<`.
+
+Now add the function at the bottom of the same file.
+
+{lang=python,line-numbers=on,starting-line-number=67}
+```
+def linkify(text: Optional[str], max_len: int = 40) -> Markup:
+    """Escape ``text`` and turn bare http(s) URLs into links, truncating long ones."""
+    parts = _URL_RE.split(text or "")
+    out = []
+    for i, part in enumerate(parts):
+        if i % 2 == 1:  # a captured URL
+            display = part if len(part) <= max_len else part[: max_len - 1] + "…"
+            out.append(
+                f'<a href="{escape(part)}" target="_blank" '
+                f'rel="noopener">{escape(display)}</a>'
+            )
+        else:
+            out.append(str(escape(part)))
+    return Markup("".join(out))
+```
+
+Because we wrapped the pattern in parentheses, `re.split` hands back the text and the URLs interleaved, and every odd position in that list is a URL it captured. So the loop can treat the two kinds differently: a URL becomes an anchor tag, and everything else gets escaped and passed through. Notice we escape inside the anchor too, both in the `href` and in the visible text, because a URL is still something a stranger typed. The `max_len` is the one cosmetic touch: a very long link is shortened with an ellipsis for display while the `href` keeps the complete address, so the layout stays tidy and the link still works. The `Markup` on the last line is what makes the whole thing safe rather than reckless. We are not turning escaping off, we are taking responsibility for it.
+
+Register it as a template filter in `application.py`.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+from quart import Quart
+
+from db import get_engine
+from utils.helpers import linkify
+```
+
+{lang=python,line-numbers=on,starting-line-number=22}
+```
+    app.add_template_filter(linkify, "linkify")
+```
+
+And use it where the message is rendered, in `templates/post/_post_card.html`.
+
+{lang=html,line-numbers=on,starting-line-number=9}
+```
+                <p class="mb-1">{{ post.message | linkify }}</p>
+```
+
+Restart the app and post a message with a link in it. It comes back clickable, and if you paste a stray `<b>` alongside it, that shows up as literal text instead of turning the rest of your feed bold.
+
+[Save the file](https://fmze.co/fftq-5.10.1).
+
+Now for the tests. There's one small thing to update first. Remember that our `create_db` fixture builds tables with `metadata.create_all`, which only builds the tables whose models have been imported. Back in the user tests we only had `user` and `relationship`; now we have posts and the feed, so open `conftest.py` and add their models to the registration list at the top.
 
 {lang=python,line-numbers=on,starting-line-number=13}
 ```
@@ -2596,7 +2670,7 @@ from post.models import post_table, feed_table  # noqa: F401
 
 Importing `post.models` registers every table defined there, including `post_image`, so the test database will now build the post, feed, and post-image tables alongside the user ones.
 
-[Save the file](https://fmze.co/fftq-5.10.1).
+[Save the file](https://fmze.co/fftq-5.10.2).
 
 Now start with `tests/test_post.py`. The first two tests are the heart of the whole app: a post lands in its author's own feed, and a post lands in a follower's feed.
 
@@ -2664,7 +2738,7 @@ async def test_post_requires_login(create_test_client):
 
 The first test posts as alice and then checks two layers at once: the message appears on her home page, and the database holds exactly one post and one feed row, her own. The second test is the one that really matters, because it proves fan-out end to end. Using the two-client trick from the user tests, bob follows alice, alice posts, and bob sees the message on his home page without doing anything. We then count the feed rows and assert there are two, one for alice and one for bob, which is the invisible half of fan-out that no page would ever show us directly. And the last test keeps the door locked: posting without logging in redirects to `/login`.
 
-[Save the file](https://fmze.co/fftq-5.10.2).
+[Save the file](https://fmze.co/fftq-5.10.3).
 
 Posts can carry an image, and testing a file upload is a little different because we have to hand the route a real file. Quart's test client lets us pass a `FileStorage` object in a `files` mapping, so we build a small in-memory PNG with Wand and send it. Create `tests/test_post_image.py`.
 
@@ -2746,9 +2820,9 @@ async def test_post_without_image_has_no_post_image_rows(create_test_app, tmp_pa
 
 We point `UPLOADS_FOLDER` at pytest's `tmp_path` so the test writes into a throwaway directory instead of our real uploads folder, then we post with a 400 by 800 pixel image attached. After the post we check the `post_image` table has a row, that the file actually landed on disk at the expected path, and that our height transform did its job: the saved image is exactly 200 pixels tall with its aspect ratio preserved, so 400 by 800 becomes 100 by 200. The second test is the mirror image, proving a text-only post creates no `post_image` rows at all, so we never write phantom image records.
 
-[Save the file](https://fmze.co/fftq-5.10.3).
+[Save the file](https://fmze.co/fftq-5.10.4).
 
-Not every test needs the database or the browser. Some of our logic is plain functions, and those are the cheapest and fastest things to test. Our messages run through a `linkify` helper that turns bare URLs into clickable links while keeping the surrounding text safe, so let's test it directly. Create `tests/test_helpers.py`.
+Not every test needs the database or the browser. Some of our logic is plain functions, and those are the cheapest and fastest things to test. The `linkify` helper we wrote at the top of this lesson is exactly that shape, and it does two jobs worth pinning down, so let's test it directly. Create `tests/test_helpers.py`.
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -2770,7 +2844,7 @@ def test_linkify_truncates_long_url():
 
 These tests don't need `async`, a client, or a fixture, because `linkify` is a pure function: text in, safe HTML out. The first test proves two jobs at once. The stray `<b>` a user typed comes back escaped as `&lt;b&gt;` so it can't inject markup, while a real URL becomes an anchor tag. The second test checks a nice touch: a very long link is shortened with an ellipsis for display, but the `href` still points at the complete URL, so the page stays tidy without breaking the link.
 
-[Save the file](https://fmze.co/fftq-5.10.4).
+[Save the file](https://fmze.co/fftq-5.10.5).
 
 Run `pytest` again and everything, users, posts, images, and helpers, should be green. Notice how little setup each new file needed: the fixtures we wrote once in the user tests carried the whole way here. That's the payoff of a good `conftest.py`, and it's what makes adding the next round of tests for comments and likes almost free.
 

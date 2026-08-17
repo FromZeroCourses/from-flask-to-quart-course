@@ -1030,7 +1030,7 @@ Time to try it. Bring the app up and head to the registration page.
 
 Register a first account, jorge, then a second one, maria, so we have two users to connect.
 
-Now log in as jorge.
+Now log in with your first user.
 
 Then visit maria's profile at `/user/maria`.
 
@@ -2664,7 +2664,7 @@ And use it where the message is rendered, in `templates/post/_post_card.html`.
 
 [Save the file](https://fmze.co/fftq-5.10.1b).
 
-Restart the app and log in as jorge, and you land back on the feed. Now post a message with a link in it, and paste a stray bold tag right after the link. The link comes back clickable, and the tag shows up as literal text instead of turning the rest of your feed bold.
+Restart the app and log in with your user, and you land back on the feed. Now post a message with a link in it, and paste a stray bold tag right after the link. The link comes back clickable, and the tag shows up as literal text instead of turning the rest of your feed bold.
 
 [Save the file](https://fmze.co/fftq-5.10.1).
 

@@ -2666,7 +2666,7 @@ And use it where the message is rendered, in `templates/post/_post_card.html`.
 
 [Save the file](https://fmze.co/fftq-5.10.1b).
 
-Restart the app and post a message with a link in it. It comes back clickable, and if you paste a stray `<b>` alongside it, that shows up as literal text instead of turning the rest of your feed bold.
+Restart the app and log in as jorge, and you land back on the feed. Now post a message with a link in it, and paste a stray bold tag right after the link. The link comes back clickable, and the tag shows up as literal text instead of turning the rest of your feed bold.
 
 [Save the file](https://fmze.co/fftq-5.10.1).
 

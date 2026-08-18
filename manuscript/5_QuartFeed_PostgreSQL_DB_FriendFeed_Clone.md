@@ -2590,6 +2590,8 @@ The obvious fix is to find the URLs and wrap them in anchor tags, and that runs 
 
 What we want is narrower. We escape everything ourselves, we build the anchor tags ourselves, and only then do we tell Jinja the result is already safe. Open `utils/helpers.py` and add the import and the pattern near the top.
 
+![We escape the text ourselves, build the anchor tag ourselves, and only then hand Jinja a string marked already safe.](images/5.10-scene3-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
 import os

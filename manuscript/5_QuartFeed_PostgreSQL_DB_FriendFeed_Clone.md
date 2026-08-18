@@ -2636,8 +2636,6 @@ Because we wrapped the pattern in parentheses, `re.split` hands back the text an
 
 ![The anchor keeps the complete address in its href while showing the shortened text, so the link still works.](images/5.10-scene4-img2.png)
 
-![A long link is shortened with an ellipsis for display, so one address cannot stretch the layout.](images/5.10-scene4-img1.png)
-
 [Save the file](https://fmze.co/fftq-5.10.1).
 
 Register it as a template filter in `application.py`.

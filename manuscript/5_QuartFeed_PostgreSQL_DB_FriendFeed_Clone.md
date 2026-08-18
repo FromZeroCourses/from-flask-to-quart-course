@@ -2744,7 +2744,11 @@ async def test_post_requires_login(create_test_client):
     assert "/login" in response.headers.get("Location", "")
 ```
 
-The first test posts as alice and then checks two layers at once: the message appears on her home page, and the database holds exactly one post and one feed row, her own. The second test is the one that really matters, because it proves fan-out end to end. Using the two-client trick from the user tests, bob follows alice, alice posts, and bob sees the message on his home page without doing anything. We then count the feed rows and assert there are two, one for alice and one for bob, which is the invisible half of fan-out that no page would ever show us directly. And the last test keeps the door locked: posting without logging in redirects to `/login`.
+The first test posts as alice and then checks two layers at once. It registers her, logs her in, and posts a message, and the redirect that comes back tells us the route accepted it. Then it checks both layers: the message appears on her home page, and the database holds exactly one post and one feed row, her own.
+
+The second test is the one that really matters, because it proves fan-out end to end. Using the two-client trick from the user tests, bob follows alice, alice posts, and bob sees the message on his home page without doing anything. We then count the feed rows and assert there are two, one for alice and one for bob, which is the invisible half of fan-out that no page would ever show us directly.
+
+And the last test keeps the door locked: posting without logging in redirects to `/login`.
 
 [Save the file](https://fmze.co/fftq-5.10.3).
 

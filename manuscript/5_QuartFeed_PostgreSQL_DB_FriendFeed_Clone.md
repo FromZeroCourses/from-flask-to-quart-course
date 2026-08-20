@@ -3084,7 +3084,7 @@ One wire is still loose: nothing loads that script yet. Open `templates/post/hom
 
 [Save the file](https://fmze.co/fftq-5.11.3a).
 
-Now the moment of truth. Open two browsers, or a normal and a private window, and log in as two users who follow each other. Put their home pages side by side and post from one. The post appears on the other's feed instantly, with no refresh. That's Server Sent Events doing exactly what we promised at the start of the chapter. From here it's all engagement: comments and likes.
+Now the moment of truth. Here's the finished app, with the feed we've been building all chapter. Write a post and send it, and our create post view writes a feed row for every recipient and publishes that same post to every open connection they have. Every follower watching gets the new card at the top of their feed on its own, with no refresh and no polling. Try it yourself in a second browser, logged in as someone who follows you. That's Server Sent Events doing exactly what we promised at the start of the chapter. From here it's all engagement: comments and likes.
 
 ## Comments and Feed Bubbling <!-- 5.12 -->
 

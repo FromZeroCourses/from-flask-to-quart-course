@@ -2896,21 +2896,31 @@ Remember from the intro that an SSE message is just text with `data:`, an option
 
 Now the broker, the piece that keeps track of who's connected and delivers events to the right people. Add it to the same file:
 
-{lang=python,line-numbers=on,starting-line-number=20}
+{lang=python,line-numbers=on,starting-line-number=21}
 ```
 class Broker:
-    """Routes Server-Sent Events to connected clients, keyed by user id."""
+    """Routes Server-Sent Events to connected clients, keyed by user id.
+
+    Each user gets their own set of connection queues, so an event is only
+    delivered to the users it is addressed to. This mirrors the persisted
+    ``feed`` fan-out: a post is pushed live only to the same recipients that
+    got a ``feed`` row (the author's followers + the author). Publishing to a
+    single global set (the old behavior) leaked every post to every open page,
+    so non-followers briefly saw posts that vanished on refresh.
+    """
 
     def __init__(self) -> None:
         self.connections: dict[int, set[asyncio.Queue]] = {}
 
     async def publish(self, user_id: int, event: ServerSentEvent) -> None:
+        """Deliver ``event`` to every open connection for a single user."""
         for q in list(self.connections.get(user_id, ())):
             await q.put(event)
 
     async def publish_many(
         self, user_ids: Iterable[int], event: ServerSentEvent
     ) -> None:
+        """Deliver ``event`` to every open connection for each recipient."""
         for user_id in set(user_ids):
             await self.publish(user_id, event)
 
@@ -2927,20 +2937,24 @@ class Broker:
                 self.connections.pop(user_id, None)
 
 
-broker = Broker()
+broker = Broker()  # module-level singleton (single-process demo)
 ```
 
 The broker keeps a dictionary from user id to a set of queues, one queue per open browser tab that user has. When someone opens the feed, they `subscribe` and get a queue. When we `publish` to a user, we drop the event into every queue they have open.
 
 The important design decision is that the broker is keyed by user id, not global. We deliver an event only to the specific recipients it's meant for, exactly the same people who got a feed row. If we broadcast every post to everyone, users would briefly see posts from people they don't follow, which would then vanish on refresh. Per-user delivery mirrors the feed, so live and refreshed always agree.
 
+[Save the file](https://fmze.co/fftq-5.11.1).
+
 Now the streaming endpoint. This is what the browser connects to. Add it to `post/views.py`:
 
-{lang=python,line-numbers=on,starting-line-number=80}
+{lang=python,line-numbers=on,starting-line-number=191}
 ```
 @post_app.route("/sse")
 @login_required
 async def sse():
+    # Capture the user id in the request context; the streaming generator
+    # below outlives it, so it subscribes to THIS user's channel only.
     user_id = session["user_id"]
 
     async def gen():
@@ -2961,33 +2975,48 @@ async def sse():
             "Transfer-Encoding": "chunked",
         },
     )
-    response.timeout = None
+    response.timeout = None  # IMPORTANT: disable the default response timeout for streaming
     return response
 ```
 
 We capture the user's id, then define an async generator `gen`. It subscribes to the broker and then loops forever, waiting for the next event on its queue and yielding the encoded bytes. Because it's a generator, Quart streams each yielded chunk to the browser as it arrives, keeping the connection open.
 
-The headers make it a stream: `text/event-stream` is the SSE content type, and we turn off caching and buffering. When the browser closes the tab, the generator is cancelled, and we catch that to unsubscribe cleanly. And crucially we set `response.timeout = None`, because this response is meant to stay open forever, not time out like a normal request. Add `make_response` and `asyncio` to the imports.
+The headers make it a stream: `text/event-stream` is the SSE content type, and we turn off caching and buffering. When the browser closes the tab, the generator is cancelled, and we catch that to unsubscribe cleanly. And crucially we set `response.timeout = None`, because this response is meant to stay open forever, not time out like a normal request. Add `make_response` and `asyncio` to the imports, along with `from utils.sse import broker`.
 
-[Save the file](https://fmze.co/fftq-5.11.1).
+[Save the file](https://fmze.co/fftq-5.11.1a).
 
 Now we publish an event when a post is created. Back in `create_post`, after the fan-out, build a payload and push it to the same recipients. Add the imports and the publish call:
 
-{lang=python,line-numbers=on,starting-line-number=17}
+{lang=python,line-numbers=on,starting-line-number=2}
 ```
 import json
-
-from utils.sse import ServerSentEvent, broker
-from utils.helpers import image_url
 ```
 
-{lang=python,line-numbers=on,starting-line-number=62}
+and widen the `utils.sse` import you added a moment ago so it brings in the event class too:
+
+{lang=python,line-numbers=on,starting-line-number=23}
+```
+from utils.sse import ServerSentEvent, broker
+```
+
+Inside `create_post`, give the new post's uid a name, so we have something to build a link from. Find the `insert` and pull `generate_uid()` out into its own variable:
+
+{lang=python,line-numbers=on,starting-line-number=137}
+```
+            post_uid = generate_uid()
+            result = await conn.execute(
+                insert(post_table).values(
+                    uid=post_uid,
+```
+
+Now the payload itself:
+
+{lang=python,line-numbers=on,starting-line-number=161}
 ```
         payload = {
             "post_id": post_id,
             "message": form.message.data,
             "author_username": session["username"],
-            "avatar_url": image_url(session["user_id"], None, "sm"),
             "permalink": url_for(
                 "post_app.detail", uid=post_uid, slug=slugify(form.message.data)
             ),
@@ -3039,7 +3068,19 @@ We open an `EventSource` pointed at `/sse`. That one line does all the connectio
 
 When a post event arrives, we parse the JSON and build a card. We use a template literal, the JavaScript string with backticks and `${}` placeholders, to assemble the HTML, and `prepend` it to the top of the feed. This is the template-literal rendering the intro mentioned: no framework, just building a string and inserting it. We escape the text first so a post can't inject HTML, and we skip the card if it's already on the page, which guards against duplicates.
 
-[Save the file](https://fmze.co/fftq-5.11.3) and load it from the home template inside the `scripts` block, alongside the infinite scroll script.
+[Save the file](https://fmze.co/fftq-5.11.3).
+
+One wire is still loose: nothing loads that script yet. Open `templates/post/home.html` and add it to the `scripts` block, above the infinite scroll script:
+
+{lang=html,line-numbers=on,starting-line-number=43}
+```
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/broadcast.js') }}"></script>
+<script src="{{ url_for('static', filename='js/infinite_scroll.js') }}"></script>
+{% endblock %}
+```
+
+[Save the file](https://fmze.co/fftq-5.11.3a).
 
 Now the moment of truth. Open two browsers, or a normal and a private window, and log in as two users who follow each other. Put their home pages side by side and post from one. The post appears on the other's feed instantly, with no refresh. That's Server Sent Events doing exactly what we promised at the start of the chapter. From here it's all engagement: comments and likes.
 

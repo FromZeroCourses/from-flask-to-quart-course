@@ -1030,7 +1030,7 @@ Time to try it. Bring the app up and head to the registration page.
 
 Register a first account, jorge, then a second one, maria, so we have two users to connect.
 
-Now log in as jorge.
+Now log in with your first user.
 
 Then visit maria's profile at `/user/maria`.
 
@@ -2584,7 +2584,87 @@ Restart and log in as an account that already follows two or three other people.
 
 We just taught the feed how to fan out on write, and that fan-out is exactly the kind of logic that's easy to break and hard to notice, because it happens behind the scenes. A post shows up, or it doesn't, and if it quietly stops reaching followers we might not see it for weeks. So this lesson locks down posting and the feed. We already built the test harness back in the user tests, so the fixtures carry over unchanged; we just add new test files that reuse them.
 
-There's one small thing to update first. Remember that our `create_db` fixture builds tables with `metadata.create_all`, which only builds the tables whose models have been imported. Back in the user tests we only had `user` and `relationship`; now we have posts and the feed, so open `conftest.py` and add their models to the registration list at the top.
+Before we write a single test, there's a piece of the message rendering we've been putting off. Right now a post's message goes onto the page as plain text, so if somebody types a URL into a post it just sits there, unclickable.
+
+The obvious fix is to find the URLs and wrap them in anchor tags, and that runs straight into the thing quietly keeping our app safe: Jinja escapes everything we render. That is on purpose. Without it, one person posting a `<script>` tag would run their code in every browser that loaded the feed. But escaping is all or nothing per value, so we cannot just mark the message safe and hand it to the template, because that switches escaping off for the whole string, including whatever the user typed around the link.
+
+What we want is narrower. We escape everything ourselves, we build the anchor tags ourselves, and only then do we tell Jinja the result is already safe. Open `utils/helpers.py` and add the import and the pattern near the top.
+
+![We escape the text ourselves, build the anchor tag ourselves, and only then hand Jinja a string marked already safe.](images/5.10-scene3-img1.png)
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import os
+import re
+from functools import wraps
+from typing import Any, Callable, Optional
+
+from markupsafe import Markup, escape
+from quart import current_app, redirect, request, session, url_for
+from snowflake import SnowflakeGenerator
+from sqlalchemy import select
+from sqlalchemy.engine import Row
+
+from user.models import user_table
+
+_URL_RE = re.compile(r"(https?://[^\s<]+)")
+```
+
+`markupsafe` already ships with Quart, so there's nothing new to install. `escape` turns the dangerous characters into harmless HTML entities, and `Markup` is the wrapper that tells Jinja this string has already been made safe and should be left alone. The pattern captures anything starting with `http://` or `https://` and running until it hits whitespace or a `<`.
+
+Now add the function at the bottom of the same file.
+
+{lang=python,line-numbers=on,starting-line-number=67}
+```
+def linkify(text: Optional[str], max_len: int = 40) -> Markup:
+    """Escape ``text`` and turn bare http(s) URLs into links, truncating long ones."""
+    parts = _URL_RE.split(text or "")
+    out = []
+    for i, part in enumerate(parts):
+        if i % 2 == 1:  # a captured URL
+            display = part if len(part) <= max_len else part[: max_len - 1] + "…"
+            out.append(
+                f'<a href="{escape(part)}" target="_blank" '
+                f'rel="noopener">{escape(display)}</a>'
+            )
+        else:
+            out.append(str(escape(part)))
+    return Markup("".join(out))
+```
+
+Because we wrapped the pattern in parentheses, `re.split` hands back the text and the URLs interleaved, and every odd position in that list is a URL it captured. So the loop can treat the two kinds differently: a URL becomes an anchor tag, and everything else gets escaped and passed through. Notice we escape inside the anchor too, both in the `href` and in the visible text, because a URL is still something a stranger typed. The `max_len` is the one cosmetic touch: a very long link is shortened with an ellipsis for display while the `href` keeps the complete address, so the layout stays tidy and the link still works. The `Markup` on the last line is what makes the whole thing safe rather than reckless. We are not turning escaping off, we are taking responsibility for it.
+
+[Save the file](https://fmze.co/fftq-5.10.1).
+
+Register it as a template filter in `application.py`.
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+from quart import Quart
+
+from db import get_engine
+from utils.helpers import linkify
+```
+
+{lang=python,line-numbers=on,starting-line-number=22}
+```
+    app.add_template_filter(linkify, "linkify")
+```
+
+[Save the file](https://fmze.co/fftq-5.10.1a).
+
+And use it where the message is rendered, in `templates/post/_post_card.html`.
+
+{lang=html,line-numbers=on,starting-line-number=9}
+```
+                <p class="mb-1">{{ post.message | linkify }}</p>
+```
+
+[Save the file](https://fmze.co/fftq-5.10.1b).
+
+Restart the app and log in with your user, and you land back on the feed. Now post a message with a link in it, and paste a stray bold tag right after the link. The link comes back clickable, and the tag shows up as literal text instead of turning the rest of your feed bold.
+
+Now for the tests. There's one small thing to update first. Remember that our `create_db` fixture builds tables with `metadata.create_all`, which only builds the tables whose models have been imported. Back in the user tests we only had `user` and `relationship`; now we have posts and the feed, so open `conftest.py` and add their models to the registration list at the top.
 
 {lang=python,line-numbers=on,starting-line-number=13}
 ```
@@ -2596,7 +2676,9 @@ from post.models import post_table, feed_table  # noqa: F401
 
 Importing `post.models` registers every table defined there, including `post_image`, so the test database will now build the post, feed, and post-image tables alongside the user ones.
 
-[Save the file](https://fmze.co/fftq-5.10.1).
+![One import line registers post, feed, and post_image in the same metadata, so create_all builds all three tables in the test database.](images/5.10-scene8-img1.png)
+
+[Save the file](https://fmze.co/fftq-5.10.2).
 
 Now start with `tests/test_post.py`. The first two tests are the heart of the whole app: a post lands in its author's own feed, and a post lands in a follower's feed.
 
@@ -2662,9 +2744,13 @@ async def test_post_requires_login(create_test_client):
     assert "/login" in response.headers.get("Location", "")
 ```
 
-The first test posts as alice and then checks two layers at once: the message appears on her home page, and the database holds exactly one post and one feed row, her own. The second test is the one that really matters, because it proves fan-out end to end. Using the two-client trick from the user tests, bob follows alice, alice posts, and bob sees the message on his home page without doing anything. We then count the feed rows and assert there are two, one for alice and one for bob, which is the invisible half of fan-out that no page would ever show us directly. And the last test keeps the door locked: posting without logging in redirects to `/login`.
+The first test posts as alice and then checks two layers at once. It registers her, logs her in, and posts a message, and the redirect that comes back tells us the route accepted it. Then it checks both layers: the message appears on her home page, and the database holds exactly one post and one feed row, her own.
 
-[Save the file](https://fmze.co/fftq-5.10.2).
+The second test is the one that really matters, because it proves fan-out end to end. Using the two-client trick from the user tests, bob follows alice, alice posts, and bob sees the message on his home page without doing anything. We then count the feed rows and assert there are two, one for alice and one for bob, which is the invisible half of fan-out that no page would ever show us directly.
+
+And the last test keeps the door locked: posting without logging in redirects to `/login`.
+
+[Save the file](https://fmze.co/fftq-5.10.3).
 
 Posts can carry an image, and testing a file upload is a little different because we have to hand the route a real file. Quart's test client lets us pass a `FileStorage` object in a `files` mapping, so we build a small in-memory PNG with Wand and send it. Create `tests/test_post_image.py`.
 
@@ -2746,9 +2832,11 @@ async def test_post_without_image_has_no_post_image_rows(create_test_app, tmp_pa
 
 We point `UPLOADS_FOLDER` at pytest's `tmp_path` so the test writes into a throwaway directory instead of our real uploads folder, then we post with a 400 by 800 pixel image attached. After the post we check the `post_image` table has a row, that the file actually landed on disk at the expected path, and that our height transform did its job: the saved image is exactly 200 pixels tall with its aspect ratio preserved, so 400 by 800 becomes 100 by 200. The second test is the mirror image, proving a text-only post creates no `post_image` rows at all, so we never write phantom image records.
 
-[Save the file](https://fmze.co/fftq-5.10.3).
+[Save the file](https://fmze.co/fftq-5.10.4).
 
-Not every test needs the database or the browser. Some of our logic is plain functions, and those are the cheapest and fastest things to test. Our messages run through a `linkify` helper that turns bare URLs into clickable links while keeping the surrounding text safe, so let's test it directly. Create `tests/test_helpers.py`.
+Not every test needs the database or the browser. Some of our logic is plain functions, and those are the cheapest and fastest things to test. The `linkify` helper we wrote at the top of this lesson is exactly that shape, and it does two jobs worth pinning down, so let's test it directly. Create `tests/test_helpers.py`.
+
+![A pure function like linkify is the cheapest test to write and the fastest to run: text in, safe HTML out, no database and no browser.](images/5.10-scene11-img1.png)
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -2770,9 +2858,11 @@ def test_linkify_truncates_long_url():
 
 These tests don't need `async`, a client, or a fixture, because `linkify` is a pure function: text in, safe HTML out. The first test proves two jobs at once. The stray `<b>` a user typed comes back escaped as `&lt;b&gt;` so it can't inject markup, while a real URL becomes an anchor tag. The second test checks a nice touch: a very long link is shortened with an ellipsis for display, but the `href` still points at the complete URL, so the page stays tidy without breaking the link.
 
-[Save the file](https://fmze.co/fftq-5.10.4).
+[Save the file](https://fmze.co/fftq-5.10.5).
 
 Run `pytest` again and everything, users, posts, images, and helpers, should be green. Notice how little setup each new file needed: the fixtures we wrote once in the user tests carried the whole way here. That's the payoff of a good `conftest.py`, and it's what makes adding the next round of tests for comments and likes almost free.
+
+![One conftest.py holds the fixtures and every test file reuses them, which is why the next round of tests costs almost nothing.](images/5.10-scene12-img1.png)
 
 ## Going Live: the SSE Broker and EventSource Client <!-- 5.11 -->
 
@@ -2806,21 +2896,31 @@ Remember from the intro that an SSE message is just text with `data:`, an option
 
 Now the broker, the piece that keeps track of who's connected and delivers events to the right people. Add it to the same file:
 
-{lang=python,line-numbers=on,starting-line-number=20}
+{lang=python,line-numbers=on,starting-line-number=21}
 ```
 class Broker:
-    """Routes Server-Sent Events to connected clients, keyed by user id."""
+    """Routes Server-Sent Events to connected clients, keyed by user id.
+
+    Each user gets their own set of connection queues, so an event is only
+    delivered to the users it is addressed to. This mirrors the persisted
+    ``feed`` fan-out: a post is pushed live only to the same recipients that
+    got a ``feed`` row (the author's followers + the author). Publishing to a
+    single global set (the old behavior) leaked every post to every open page,
+    so non-followers briefly saw posts that vanished on refresh.
+    """
 
     def __init__(self) -> None:
         self.connections: dict[int, set[asyncio.Queue]] = {}
 
     async def publish(self, user_id: int, event: ServerSentEvent) -> None:
+        """Deliver ``event`` to every open connection for a single user."""
         for q in list(self.connections.get(user_id, ())):
             await q.put(event)
 
     async def publish_many(
         self, user_ids: Iterable[int], event: ServerSentEvent
     ) -> None:
+        """Deliver ``event`` to every open connection for each recipient."""
         for user_id in set(user_ids):
             await self.publish(user_id, event)
 
@@ -2837,20 +2937,26 @@ class Broker:
                 self.connections.pop(user_id, None)
 
 
-broker = Broker()
+broker = Broker()  # module-level singleton (single-process demo)
 ```
 
 The broker keeps a dictionary from user id to a set of queues, one queue per open browser tab that user has. When someone opens the feed, they `subscribe` and get a queue. When we `publish` to a user, we drop the event into every queue they have open.
 
 The important design decision is that the broker is keyed by user id, not global. We deliver an event only to the specific recipients it's meant for, exactly the same people who got a feed row. If we broadcast every post to everyone, users would briefly see posts from people they don't follow, which would then vanish on refresh. Per-user delivery mirrors the feed, so live and refreshed always agree.
 
+![Keying the broker by user id delivers a post to exactly the people who got a feed row, so a non-follower never sees a post that vanishes on refresh.](images/5.11-scene3-img1.png)
+
+[Save the file](https://fmze.co/fftq-5.11.1).
+
 Now the streaming endpoint. This is what the browser connects to. Add it to `post/views.py`:
 
-{lang=python,line-numbers=on,starting-line-number=80}
+{lang=python,line-numbers=on,starting-line-number=191}
 ```
 @post_app.route("/sse")
 @login_required
 async def sse():
+    # Capture the user id in the request context; the streaming generator
+    # below outlives it, so it subscribes to THIS user's channel only.
     user_id = session["user_id"]
 
     async def gen():
@@ -2871,33 +2977,48 @@ async def sse():
             "Transfer-Encoding": "chunked",
         },
     )
-    response.timeout = None
+    response.timeout = None  # IMPORTANT: disable the default response timeout for streaming
     return response
 ```
 
 We capture the user's id, then define an async generator `gen`. It subscribes to the broker and then loops forever, waiting for the next event on its queue and yielding the encoded bytes. Because it's a generator, Quart streams each yielded chunk to the browser as it arrives, keeping the connection open.
 
-The headers make it a stream: `text/event-stream` is the SSE content type, and we turn off caching and buffering. When the browser closes the tab, the generator is cancelled, and we catch that to unsubscribe cleanly. And crucially we set `response.timeout = None`, because this response is meant to stay open forever, not time out like a normal request. Add `make_response` and `asyncio` to the imports.
+The headers make it a stream: `text/event-stream` is the SSE content type, and we turn off caching and buffering. When the browser closes the tab, the generator is cancelled, and we catch that to unsubscribe cleanly. And crucially we set `response.timeout = None`, because this response is meant to stay open forever, not time out like a normal request. Add `make_response` and `asyncio` to the imports, along with `from utils.sse import broker`.
 
-[Save the file](https://fmze.co/fftq-5.11.1).
+[Save the file](https://fmze.co/fftq-5.11.1a).
 
 Now we publish an event when a post is created. Back in `create_post`, after the fan-out, build a payload and push it to the same recipients. Add the imports and the publish call:
 
-{lang=python,line-numbers=on,starting-line-number=17}
+{lang=python,line-numbers=on,starting-line-number=2}
 ```
 import json
-
-from utils.sse import ServerSentEvent, broker
-from utils.helpers import image_url
 ```
 
-{lang=python,line-numbers=on,starting-line-number=62}
+and widen the `utils.sse` import you added a moment ago so it brings in the event class too:
+
+{lang=python,line-numbers=on,starting-line-number=23}
+```
+from utils.sse import ServerSentEvent, broker
+```
+
+Inside `create_post`, give the new post's uid a name, so we have something to build a link from. Find the `insert` and pull `generate_uid()` out into its own variable:
+
+{lang=python,line-numbers=on,starting-line-number=137}
+```
+            post_uid = generate_uid()
+            result = await conn.execute(
+                insert(post_table).values(
+                    uid=post_uid,
+```
+
+Now the payload itself:
+
+{lang=python,line-numbers=on,starting-line-number=161}
 ```
         payload = {
             "post_id": post_id,
             "message": form.message.data,
             "author_username": session["username"],
-            "avatar_url": image_url(session["user_id"], None, "sm"),
             "permalink": url_for(
                 "post_app.detail", uid=post_uid, slug=slugify(form.message.data)
             ),
@@ -2949,7 +3070,19 @@ We open an `EventSource` pointed at `/sse`. That one line does all the connectio
 
 When a post event arrives, we parse the JSON and build a card. We use a template literal, the JavaScript string with backticks and `${}` placeholders, to assemble the HTML, and `prepend` it to the top of the feed. This is the template-literal rendering the intro mentioned: no framework, just building a string and inserting it. We escape the text first so a post can't inject HTML, and we skip the card if it's already on the page, which guards against duplicates.
 
-[Save the file](https://fmze.co/fftq-5.11.3) and load it from the home template inside the `scripts` block, alongside the infinite scroll script.
+[Save the file](https://fmze.co/fftq-5.11.3).
+
+One wire is still loose: nothing loads that script yet. Open `templates/post/home.html` and add it to the `scripts` block, above the infinite scroll script:
+
+{lang=html,line-numbers=on,starting-line-number=43}
+```
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/broadcast.js') }}"></script>
+<script src="{{ url_for('static', filename='js/infinite_scroll.js') }}"></script>
+{% endblock %}
+```
+
+[Save the file](https://fmze.co/fftq-5.11.3a).
 
 Now the moment of truth. Open two browsers, or a normal and a private window, and log in as two users who follow each other. Put their home pages side by side and post from one. The post appears on the other's feed instantly, with no refresh. That's Server Sent Events doing exactly what we promised at the start of the chapter. From here it's all engagement: comments and likes.
 

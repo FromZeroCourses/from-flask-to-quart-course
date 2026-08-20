@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -5,6 +6,7 @@ from quart import (
     Blueprint,
     abort,
     current_app,
+    make_response,
     redirect,
     render_template,
     request,
@@ -17,6 +19,7 @@ from post.feed_ops import fan_out_post
 from post.forms import PostForm
 from post.models import feed_table, post_image_table, post_table
 from relationship.views import followers
+from utils.sse import broker
 from user.models import user_table
 from utils.helpers import (
     generate_uid,
@@ -183,3 +186,32 @@ async def detail(uid: str, slug: Optional[str] = None):
         )
 
     return await render_template("post/detail.html", post=post)
+
+
+@post_app.route("/sse")
+@login_required
+async def sse():
+    # Capture the user id in the request context; the streaming generator
+    # below outlives it, so it subscribes to THIS user's channel only.
+    user_id = session["user_id"]
+
+    async def gen():
+        q = broker.subscribe(user_id)
+        try:
+            while True:
+                event = await q.get()
+                yield event.encode()
+        except asyncio.CancelledError:
+            broker.unsubscribe(user_id, q)
+            raise
+
+    response = await make_response(
+        gen(),
+        {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Transfer-Encoding": "chunked",
+        },
+    )
+    response.timeout = None  # IMPORTANT: disable the default response timeout for streaming
+    return response

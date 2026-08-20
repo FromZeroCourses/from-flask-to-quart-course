@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,7 +20,7 @@ from post.feed_ops import fan_out_post
 from post.forms import PostForm
 from post.models import feed_table, post_image_table, post_table
 from relationship.views import followers
-from utils.sse import broker
+from utils.sse import ServerSentEvent, broker
 from user.models import user_table
 from utils.helpers import (
     generate_uid,
@@ -133,9 +134,10 @@ async def create_post():
     if await form.validate_on_submit():
         engine = current_app.dbc  # type: ignore
         async with engine.begin() as conn:
+            post_uid = generate_uid()
             result = await conn.execute(
                 insert(post_table).values(
-                    uid=generate_uid(),
+                    uid=post_uid,
                     user_id=session["user_id"],
                     message=form.message.data,
                 )
@@ -155,6 +157,19 @@ async def create_post():
                         post_id=post_id, image_id=image_id, width=width, position=0
                     )
                 )
+
+        payload = {
+            "post_id": post_id,
+            "message": form.message.data,
+            "author_username": session["username"],
+            "permalink": url_for(
+                "post_app.detail", uid=post_uid, slug=slugify(form.message.data)
+            ),
+        }
+        await broker.publish_many(
+            recipient_ids,
+            ServerSentEvent(event="post", data=json.dumps(payload)),
+        )
 
     return redirect(url_for(".home"))
 

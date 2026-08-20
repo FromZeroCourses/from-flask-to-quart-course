@@ -2944,6 +2944,8 @@ The broker keeps a dictionary from user id to a set of queues, one queue per ope
 
 The important design decision is that the broker is keyed by user id, not global. We deliver an event only to the specific recipients it's meant for, exactly the same people who got a feed row. If we broadcast every post to everyone, users would briefly see posts from people they don't follow, which would then vanish on refresh. Per-user delivery mirrors the feed, so live and refreshed always agree.
 
+![Keying the broker by user id delivers a post to exactly the people who got a feed row, so a non-follower never sees a post that vanishes on refresh.](images/5.11-scene3-img1.png)
+
 [Save the file](https://fmze.co/fftq-5.11.1).
 
 Now the streaming endpoint. This is what the browser connects to. Add it to `post/views.py`:

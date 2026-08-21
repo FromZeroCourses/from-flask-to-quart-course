@@ -3066,9 +3066,15 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 ```
 
-We open an `EventSource` pointed at `/sse`. That one line does all the connection work: it opens the stream, keeps it alive, and even reconnects automatically if the network drops. Then we listen for our named `post` event.
+We open an `EventSource` pointed at `/sse`. That one line does all the connection work: it opens the stream, keeps it alive, and even reconnects automatically if the network drops.
 
-When a post event arrives, we parse the JSON and build a card. We use a template literal, the JavaScript string with backticks and `${}` placeholders, to assemble the HTML, and `prepend` it to the top of the feed. This is the template-literal rendering the intro mentioned: no framework, just building a string and inserting it. We escape the text first so a post can't inject HTML, and we skip the card if it's already on the page, which guards against duplicates.
+Next comes a small `escapeHtml` helper. It swaps the dangerous characters for their HTML entities, so anything a user typed is neutralised before it ever reaches the page. Then we listen for our named `post` event.
+
+When a post event arrives, we parse the JSON out of it. If a card for that post is already sitting on the page we return early, which guards against duplicates. Otherwise we create the card element, give it Bootstrap's card classes, and stamp the post id on it.
+
+Now we assemble the markup with a template literal, the JavaScript string with backticks and dollar-brace placeholders. The author's handle links to their profile, the message goes in a paragraph, and a permalink sits underneath in muted text.
+
+Every piece of user text runs through `escapeHtml` on the way in, so a post can't inject HTML into somebody else's feed. Then we `prepend` the card, so the newest post lands at the top of the feed: no framework, just a string and one insert.
 
 [Save the file](https://fmze.co/fftq-5.11.3).
 

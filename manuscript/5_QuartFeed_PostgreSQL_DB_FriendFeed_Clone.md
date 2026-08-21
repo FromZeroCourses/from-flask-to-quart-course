@@ -2981,9 +2981,9 @@ async def sse():
     return response
 ```
 
-We capture the user's id, then define an async generator `gen`. It subscribes to the broker and then loops forever, waiting for the next event on its queue and yielding the encoded bytes. Because it's a generator, Quart streams each yielded chunk to the browser as it arrives, keeping the connection open.
+We capture the user's id, then define an async generator `gen`. It subscribes to the broker and then loops forever, waiting for the next event on its queue and yielding the encoded bytes. Because it's a generator, Quart streams each yielded chunk to the browser as it arrives, keeping the connection open. And when the browser closes the tab, the generator is cancelled, so we catch that and unsubscribe cleanly.
 
-The headers make it a stream: `text/event-stream` is the SSE content type, and we turn off caching and buffering. When the browser closes the tab, the generator is cancelled, and we catch that to unsubscribe cleanly. And crucially we set `response.timeout = None`, because this response is meant to stay open forever, not time out like a normal request. Add `make_response` and `asyncio` to the imports, along with `from utils.sse import broker`.
+The headers are what make it a stream. The content type is `text/event-stream`, which is what server-sent events use, and we turn off caching and buffering. And crucially we set the response timeout to `None`, because this response is meant to stay open forever, not time out like a normal request. Add `make_response` and `asyncio` to the imports, along with `from utils.sse import broker`.
 
 [Save the file](https://fmze.co/fftq-5.11.1a).
 

@@ -2989,8 +2989,6 @@ broker = Broker()  # module-level singleton (single-process demo)
 
 We create one broker at import time, and every part of the app that imports `broker` talks to the same instance. There is one mailroom, shared by the whole process.
 
-![Creating the broker at import time makes it a single shared instance, so every module that imports it talks to the same mailroom.](images/5.11-scene8-img1.png)
-
 ![Keying the broker by user id delivers a post to exactly the people who got a feed row, so a non-follower never sees a post that vanishes on refresh.](images/5.11-scene3-img1.png)
 
 The important design decision in this file is that the broker is keyed by user id, not global. We deliver an event only to the specific recipients it's meant for, exactly the same people who got a feed row. If we broadcast every post to everyone, users would briefly see posts from people they don't follow, which would then vanish on refresh. Per-user delivery mirrors the feed, so live and refreshed always agree.

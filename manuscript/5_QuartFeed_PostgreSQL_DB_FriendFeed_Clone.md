@@ -3140,7 +3140,7 @@ It reads like the dictionaries our feed loader builds, and that is the point: th
 
 [Save the file](https://fmze.co/fftq-5.11.2).
 
-Now the browser side. We connect to `/sse` with the built-in `EventSource` object and render incoming posts. Create `static/js/broadcast.js`:
+Now the browser side. We connect to `/sse` with the built-in `EventSource` object and render incoming posts, and we'll build the file the way we read it: a piece at a time. Create `static/js/broadcast.js`:
 
 {lang=javascript,line-numbers=on}
 ```
@@ -3149,19 +3149,38 @@ document.addEventListener("DOMContentLoaded", () => {
   if (!feed) return;
 
   const es = new EventSource("/sse");
+```
 
+Once the page is loaded, we look for the feed container, and if this page doesn't have one we do nothing. Then we open an `EventSource` pointed at `/sse`. That one line does all the connection work: it opens the stream, keeps it alive, and even reconnects automatically if the network drops.
+
+Next, two small helpers. First, safety:
+
+{lang=javascript,line-numbers=on,starting-line-number=7}
+```
   const escapeHtml = (str) =>
     String(str).replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
+```
 
+`escapeHtml` swaps the dangerous characters for their HTML entities, so anything a user typed is neutralised before it ever reaches the page.
+
+{lang=javascript,line-numbers=on,starting-line-number=12}
+```
   const formatWhen = (iso) => {
     const d = new Date(iso);
     const month = d.toLocaleString("en-US", { month: "short" });
     const pad = (n) => String(n).padStart(2, "0");
     return `${month} ${pad(d.getDate())}, ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
+```
 
+And `formatWhen` prints a timestamp as an abbreviated month, a day, a year, and the time, which is exactly how our feed template prints its own. That is not a coincidence, it is the job: if two cards in the same column ever spell the same moment differently, the live one gives itself away.
+
+Now we listen for our named `post` event:
+
+{lang=javascript,line-numbers=on,starting-line-number=19}
+```
   es.addEventListener("post", (e) => {
     const post = JSON.parse(e.data);
     if (feed.querySelector(`[data-post-id="${post.post_id}"]`)) return;
@@ -3169,6 +3188,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const card = document.createElement("div");
     card.className = "card mb-3";
     card.setAttribute("data-post-id", post.post_id);
+```
+
+When a post event arrives, we parse the JSON out of it. If a card for that post is already sitting on the page we return early, which guards against duplicates. Otherwise we create the card element, give it Bootstrap's card classes, and stamp the post id on it.
+
+Now the markup, assembled with a template literal, the JavaScript string with backticks and dollar-brace placeholders:
+
+{lang=javascript,line-numbers=on,starting-line-number=26}
+```
     card.innerHTML = `
       <div class="card-body">
         <div class="d-flex">
@@ -3185,18 +3212,16 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
       </div>`;
+```
+
+Here discipline matters more than cleverness: this card is a twin of the one the feed template renders, because the reader will see the two stacked in the same column. The avatar at forty pixels, the author's handle linking to their profile, the message, any images at their fixed two-hundred-pixel height, and the timestamp linking to the post's permalink. Same structure, same classes, same order.
+
+{lang=javascript,line-numbers=on,starting-line-number=42}
+```
     feed.prepend(card);
   });
 });
 ```
-
-We open an `EventSource` pointed at `/sse`. That one line does all the connection work: it opens the stream, keeps it alive, and even reconnects automatically if the network drops.
-
-Next come two small helpers. `escapeHtml` swaps the dangerous characters for their HTML entities, so anything a user typed is neutralised before it ever reaches the page. And `formatWhen` prints a timestamp as an abbreviated month, a day, a year, and the time, which is exactly how our feed template prints its own. That is not a coincidence, it is the job: if two cards in the same column ever spell the same moment differently, the live one gives itself away.
-
-Then we listen for our named `post` event. When one arrives, we parse the JSON out of it. If a card for that post is already sitting on the page we return early, which guards against duplicates. Otherwise we create the card element, give it Bootstrap's card classes, and stamp the post id on it.
-
-Now we assemble the markup with a template literal, the JavaScript string with backticks and dollar-brace placeholders. And here discipline matters more than cleverness: this card is a twin of the one the feed template renders, because the reader will see the two stacked in the same column. The avatar at forty pixels, the author's handle linking to their profile, the message, any images at their fixed two-hundred-pixel height, and the timestamp linking to the post's permalink. Same structure, same classes, same order.
 
 Every piece of user text runs through `escapeHtml` on the way in, so a post can't inject HTML into somebody else's feed. Then we `prepend` the card, so the newest post lands at the top of the feed: no framework, just a string and one insert.
 

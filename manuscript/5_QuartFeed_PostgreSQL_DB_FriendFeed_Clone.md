@@ -2930,11 +2930,7 @@ class Broker:
 
 The whole state is one dictionary: user id to a set of queues. Why a set and not a single queue per user? Because one person can have the feed open in two tabs, or on a laptop and a phone at once. Each open connection gets its own queue, and a delivery to that user drops a copy into every one of them, so every screen updates.
 
-![The broker keys a set of queues by user id, so one delivery drops a copy into every screen that person has open.](images/5.11-scene5-img1.png)
-
 And what's an `asyncio.Queue`? It is a mailbox built for async code. One side puts items in; the other side awaits until something arrives. The waiting is the beautiful part: an async function that is awaiting on an empty queue costs nothing, the event loop simply runs other work until there is mail. We'll see that pay off in a moment.
-
-![An asyncio Queue is a mailbox: one side puts, the other awaits, and waiting on an empty queue costs nothing while the event loop runs other work.](images/5.11-scene5-img2.png)
 
 Delivery first. Add the two publish methods:
 

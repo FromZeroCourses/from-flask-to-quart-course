@@ -147,6 +147,7 @@ async def create_post():
             recipient_ids.add(session["user_id"])
             await fan_out_post(conn, post_id, recipient_ids)
 
+            images: List[Dict[str, Any]] = []
             if form.image.data:
                 image_id, width = image_height_transform(
                     form.image.data.read(), _posts_dir(), post_id
@@ -156,6 +157,18 @@ async def create_post():
                         post_id=post_id, image_id=image_id, width=width, position=0
                     )
                 )
+                images.append(
+                    {"url": post_image_url(post_id, image_id), "width": width}
+                )
+
+            author = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.id == session["user_id"])
+                )
+            ).fetchone()
+            post_row = (
+                await conn.execute(select(post_table).where(post_table.c.id == post_id))
+            ).fetchone()
 
     return redirect(url_for(".home"))
 

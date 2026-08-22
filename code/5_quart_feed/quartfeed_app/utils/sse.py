@@ -21,12 +21,10 @@ class ServerSentEvent:
 class Broker:
     """Routes Server-Sent Events to connected clients, keyed by user id.
 
-    Each user gets their own set of connection queues, so an event is only
-    delivered to the users it is addressed to. This mirrors the persisted
-    ``feed`` fan-out: a post is pushed live only to the same recipients that
-    got a ``feed`` row (the author's followers + the author). Publishing to a
-    single global set (the old behavior) leaked every post to every open page,
-    so non-followers briefly saw posts that vanished on refresh.
+    Each user gets their own set of connection queues, so an event reaches
+    only the users it is addressed to, the same recipients that got a
+    ``feed`` row. A global broadcast would leak every post to every open
+    page, including users who don't follow the author.
     """
 
     def __init__(self) -> None:

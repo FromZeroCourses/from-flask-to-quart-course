@@ -3136,6 +3136,8 @@ Now the payload itself, after the transaction closes:
 
 It reads like the dictionaries our feed loader builds, and that is the point: this is the same card, delivered over a different wire. The timestamp goes out as ISO text, because JSON has no date type, and the browser will parse it back into one. Then we `publish_many` to `recipient_ids`, the exact same set we just fanned the post out to, so the live push and the stored feed always reach the same people. Note we pass `event="post"`, which the browser will listen for by name.
 
+![The same post card travels two ways: stored as a feed row for the next page load, and pushed live as an SSE payload.](images/5.11-scene15-img1.png)
+
 [Save the file](https://fmze.co/fftq-5.11.2).
 
 Now the browser side. We connect to `/sse` with the built-in `EventSource` object and render incoming posts. Create `static/js/broadcast.js`:

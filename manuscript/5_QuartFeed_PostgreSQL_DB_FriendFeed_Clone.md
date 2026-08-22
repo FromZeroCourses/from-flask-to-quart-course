@@ -3003,35 +3003,65 @@ and widen the `utils.sse` import you added a moment ago so it brings in the even
 from utils.sse import ServerSentEvent, broker
 ```
 
-Inside `create_post`, give the new post's uid a name, so we have something to build a link from. Find the `insert` and pull `generate_uid()` out into its own variable:
+What should the payload carry? Everything the browser needs to draw a post card, and we already know exactly what that is, because our feed template draws one on every page load: the author's name and avatar, the message, any images, the timestamp, and the permalink. So let's gather precisely that, starting with the images. The image branch already stores each upload; have it also remember what it stored. Declare an empty list just above the branch, and append the image's URL and width after the insert:
 
-{lang=python,line-numbers=on,starting-line-number=137}
+{lang=python,line-numbers=on,starting-line-number=150}
 ```
-            post_uid = generate_uid()
-            result = await conn.execute(
-                insert(post_table).values(
-                    uid=post_uid,
+            images: List[Dict[str, Any]] = []
+            if form.image.data:
+                image_id, width = image_height_transform(
+                    form.image.data.read(), _posts_dir(), post_id
+                )
+                await conn.execute(
+                    insert(post_image_table).values(
+                        post_id=post_id, image_id=image_id, width=width, position=0
+                    )
+                )
+                images.append(
+                    {"url": post_image_url(post_id, image_id), "width": width}
+                )
 ```
 
-Now the payload itself:
+Next, the author and the post as the database knows them. The form gave us the message, but the database knows things the form never saw: the timestamp it stamped on the row, the uid it stored, and the author's avatar image. Still inside the transaction, fetch both rows:
 
-{lang=python,line-numbers=on,starting-line-number=161}
+{lang=python,line-numbers=on,starting-line-number=164}
+```
+            author = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.id == session["user_id"])
+                )
+            ).fetchone()
+            post_row = (
+                await conn.execute(select(post_table).where(post_table.c.id == post_id))
+            ).fetchone()
+```
+
+Now the payload itself, after the transaction closes:
+
+{lang=python,line-numbers=on,starting-line-number=173}
 ```
         payload = {
             "post_id": post_id,
-            "message": form.message.data,
-            "author_username": session["username"],
+            "uid": post_row.uid,
+            "message": post_row.message,
+            "created": post_row.created.isoformat(),
+            "author_id": author.id,
+            "author_username": author.username,
+            "avatar_url": image_url(author.id, author.image, "sm"),
             "permalink": url_for(
-                "post_app.detail", uid=post_uid, slug=slugify(form.message.data)
+                "post_app.detail", uid=post_row.uid, slug=slugify(post_row.message)
             ),
+            "images": images,
         }
+        # Push live ONLY to the same recipients that got a feed row (the
+        # author's followers + the author). A global broadcast would leak the
+        # post to every open page, including users who don't follow the author.
         await broker.publish_many(
-            recipient_ids,
-            ServerSentEvent(event="post", data=json.dumps(payload)),
+            recipient_ids, ServerSentEvent(event="post", data=json.dumps(payload))
         )
 ```
 
-We build a small dictionary describing the post, everything the browser needs to render a card, and serialize it to JSON. Then we `publish_many` to `recipient_ids`, the exact same set we just fanned the post out to. So the live push and the stored feed always reach the same people. Note we pass `event="post"`, which the browser will listen for by name.
+It reads like the dictionaries our feed loader builds, and that is the point: this is the same card, delivered over a different wire. The timestamp goes out as ISO text, because JSON has no date type, and the browser will parse it back into one. Then we `publish_many` to `recipient_ids`, the exact same set we just fanned the post out to, so the live push and the stored feed always reach the same people. Note we pass `event="post"`, which the browser will listen for by name.
 
 [Save the file](https://fmze.co/fftq-5.11.2).
 
@@ -3050,6 +3080,13 @@ document.addEventListener("DOMContentLoaded", () => {
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
 
+  const formatWhen = (iso) => {
+    const d = new Date(iso);
+    const month = d.toLocaleString("en-US", { month: "short" });
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${month} ${pad(d.getDate())}, ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   es.addEventListener("post", (e) => {
     const post = JSON.parse(e.data);
     if (feed.querySelector(`[data-post-id="${post.post_id}"]`)) return;
@@ -3059,9 +3096,19 @@ document.addEventListener("DOMContentLoaded", () => {
     card.setAttribute("data-post-id", post.post_id);
     card.innerHTML = `
       <div class="card-body">
-        <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold">@${escapeHtml(post.author_username)}</a>
-        <p class="mb-1">${escapeHtml(post.message)}</p>
-        <a href="${post.permalink}" class="small text-muted">permalink</a>
+        <div class="d-flex">
+          <img src="${post.avatar_url}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40" alt="avatar">
+          <div class="flex-grow-1">
+            <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold">@${escapeHtml(post.author_username)}</a>
+            <p class="mb-1">${escapeHtml(post.message)}</p>
+            ${(post.images && post.images.length)
+              ? `<div class="d-flex gap-2 mb-2">${post.images
+                  .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
+                  .join("")}</div>`
+              : ""}
+            <a href="${post.permalink}" class="small text-muted">${formatWhen(post.created)}</a>
+          </div>
+        </div>
       </div>`;
     feed.prepend(card);
   });
@@ -3070,11 +3117,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 We open an `EventSource` pointed at `/sse`. That one line does all the connection work: it opens the stream, keeps it alive, and even reconnects automatically if the network drops.
 
-Next comes a small `escapeHtml` helper. It swaps the dangerous characters for their HTML entities, so anything a user typed is neutralised before it ever reaches the page. Then we listen for our named `post` event.
+Next come two small helpers. `escapeHtml` swaps the dangerous characters for their HTML entities, so anything a user typed is neutralised before it ever reaches the page. And `formatWhen` prints a timestamp as an abbreviated month, a day, a year, and the time, which is exactly how our feed template prints its own. That is not a coincidence, it is the job: if two cards in the same column ever spell the same moment differently, the live one gives itself away.
 
-When a post event arrives, we parse the JSON out of it. If a card for that post is already sitting on the page we return early, which guards against duplicates. Otherwise we create the card element, give it Bootstrap's card classes, and stamp the post id on it.
+Then we listen for our named `post` event. When one arrives, we parse the JSON out of it. If a card for that post is already sitting on the page we return early, which guards against duplicates. Otherwise we create the card element, give it Bootstrap's card classes, and stamp the post id on it.
 
-Now we assemble the markup with a template literal, the JavaScript string with backticks and dollar-brace placeholders. The author's handle links to their profile, the message goes in a paragraph, and a permalink sits underneath in muted text.
+Now we assemble the markup with a template literal, the JavaScript string with backticks and dollar-brace placeholders. And here discipline matters more than cleverness: this card is a twin of the one the feed template renders, because the reader will see the two stacked in the same column. The avatar at forty pixels, the author's handle linking to their profile, the message, any images at their fixed two-hundred-pixel height, and the timestamp linking to the post's permalink. Same structure, same classes, same order.
 
 Every piece of user text runs through `escapeHtml` on the way in, so a post can't inject HTML into somebody else's feed. Then we `prepend` the card, so the newest post lands at the top of the feed: no framework, just a string and one insert.
 

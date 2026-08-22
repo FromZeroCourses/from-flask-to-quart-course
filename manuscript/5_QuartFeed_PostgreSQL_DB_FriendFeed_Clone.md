@@ -2868,7 +2868,9 @@ Run `pytest` again and everything, users, posts, images, and helpers, should be 
 
 This is the lesson the whole chapter has been building toward. We have a feed that fills in when you refresh; now we'll make new posts appear the instant they're written, using the Server Sent Events we introduced at the very start. Time to make that promise real.
 
-There are two halves to this: the server pushing events, and the browser receiving them. Let's build the server side first, starting with a tiny class that formats an event in the SSE wire format. Create `utils/sse.py`:
+There are two halves to this: the server pushing events, and the browser receiving them. But before we type anything, let's get the shape of the whole system in our heads, because it has three moving parts and each one is simple once you see what it's for. First, every open feed page keeps one long-lived HTTP connection to our server, a phone line that never hangs up. Second, on our end of each line sits a queue, a little mailbox where events wait to be delivered. And third, a broker keeps all those mailboxes organized by user id, so when someone writes a post, we find each follower's mailboxes, drop a copy of the event in each one, and every waiting connection wakes up and sends it down the line. That's the entire design. We'll build it from the inside out: first the event, then the broker, then the connection.
+
+Create `utils/sse.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -2882,7 +2884,14 @@ class ServerSentEvent:
     data: str
     event: Optional[str] = None  # "post" | "comment" | "like"
     id: Optional[str] = None
+```
 
+Remember from the start of the chapter that a Server Sent Event is not some binary protocol, it is plain text: a `data:` line carrying the payload, an optional `event:` line naming what kind of message this is, an optional `id:`, and a blank line meaning "message over". So our class is just those three fields. `data` will carry JSON describing a post, a comment, or a like. `event` is the name the browser will listen for, and we'll use exactly three: `post`, `comment`, and `like`. The `@dataclass` decorator writes the constructor for us, so this class is pure shape, no behavior yet.
+
+The behavior is one method. Add it to the class:
+
+{lang=python,line-numbers=on,starting-line-number=12}
+```
     def encode(self) -> bytes:
         msg = f"data: {self.data}\n"
         if self.event is not None:
@@ -2892,65 +2901,93 @@ class ServerSentEvent:
         return (msg + "\n").encode("utf-8")
 ```
 
-Remember from the intro that an SSE message is just text with `data:`, an optional `event:` type, and an optional `id:`, ending in a blank line. This little dataclass holds those three fields and its `encode` method builds exactly that text. Our event types will be `post`, `comment`, and `like`, just as we planned.
+`encode` builds the wire text from the inside out. It starts with the `data:` line, then prepends `event:` if we set one, then `id:`, and finally adds the blank line and converts the whole thing to bytes. So a new post goes down the wire as an `event: post` line, a `data:` line with the JSON right after it, and then an empty line. That empty line is not decoration, it is the protocol: it's how the browser knows this message is complete and the next one can begin.
 
-Now the broker, the piece that keeps track of who's connected and delivers events to the right people. Add it to the same file:
+Now the broker, the mailroom at the center of the design. It has exactly three jobs: hand a mailbox to every connection that opens, take mail in and deliver it to the right boxes, and throw the mailbox away when the connection closes. Start the class in the same file:
 
 {lang=python,line-numbers=on,starting-line-number=21}
 ```
 class Broker:
     """Routes Server-Sent Events to connected clients, keyed by user id.
 
-    Each user gets their own set of connection queues, so an event is only
-    delivered to the users it is addressed to. This mirrors the persisted
-    ``feed`` fan-out: a post is pushed live only to the same recipients that
-    got a ``feed`` row (the author's followers + the author). Publishing to a
-    single global set (the old behavior) leaked every post to every open page,
-    so non-followers briefly saw posts that vanished on refresh.
+    Each user gets their own set of connection queues, so an event reaches
+    only the users it is addressed to, the same recipients that got a
+    ``feed`` row. A global broadcast would leak every post to every open
+    page, including users who don't follow the author.
     """
 
     def __init__(self) -> None:
         self.connections: dict[int, set[asyncio.Queue]] = {}
+```
 
+The whole state is one dictionary: user id to a set of queues. Why a set and not a single queue per user? Because one person can have the feed open in two tabs, or on a laptop and a phone at once. Each open connection gets its own queue, and a delivery to that user drops a copy into every one of them, so every screen updates.
+
+And what's an `asyncio.Queue`? It is a mailbox built for async code. One side puts items in; the other side awaits until something arrives. The waiting is the beautiful part: an async function that is awaiting on an empty queue costs nothing, the event loop simply runs other work until there is mail. We'll see that pay off in a moment.
+
+Delivery first. Add the two publish methods:
+
+{lang=python,line-numbers=on,starting-line-number=33}
+```
     async def publish(self, user_id: int, event: ServerSentEvent) -> None:
         """Deliver ``event`` to every open connection for a single user."""
         for q in list(self.connections.get(user_id, ())):
             await q.put(event)
+```
 
+`publish` delivers to one user: look up their queues and put a copy of the event in each. Two small details are doing quiet work here. `get(user_id, ())` means a user with no open pages gets an empty tuple back, so we deliver to no one and raise no error; being offline is not a special case. And we wrap the set in `list()` before looping, because connections can open or close while we're awaiting inside the loop, and mutating a set mid-iteration is an error in Python.
+
+{lang=python,line-numbers=on,starting-line-number=38}
+```
     async def publish_many(
         self, user_ids: Iterable[int], event: ServerSentEvent
     ) -> None:
         """Deliver ``event`` to every open connection for each recipient."""
         for user_id in set(user_ids):
             await self.publish(user_id, event)
+```
 
+`publish_many` is the fan-out twin, one event to a whole list of recipients. Wrapping `user_ids` in `set()` deduplicates, so nobody gets the same post twice even if they show up twice in the recipient list.
+
+Now the other side of the counter, how a connection gets a mailbox and gives it back:
+
+{lang=python,line-numbers=on,starting-line-number=45}
+```
     def subscribe(self, user_id: int) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue()
         self.connections.setdefault(user_id, set()).add(q)
         return q
+```
 
+`subscribe` makes a fresh queue, files it under your user id, and hands it back to you. `setdefault` creates your entry in the dictionary the first time you connect and reuses it after that, so the first tab and the third tab take the same code path.
+
+{lang=python,line-numbers=on,starting-line-number=50}
+```
     def unsubscribe(self, user_id: int, q: asyncio.Queue) -> None:
         conns = self.connections.get(user_id)
         if conns is not None:
             conns.discard(q)
             if not conns:
                 self.connections.pop(user_id, None)
+```
 
+`unsubscribe` is the cleanup: take this queue out of the user's set, and if it was their last open connection, remove the whole entry so the dictionary doesn't fill up with empty sets for every user who ever visited.
 
+One line left, at the bottom of the file:
+
+{lang=python,line-numbers=on,starting-line-number=58}
+```
 broker = Broker()  # module-level singleton (single-process demo)
 ```
 
-The broker keeps a dictionary from user id to a set of queues, one queue per open browser tab that user has. When someone opens the feed, they `subscribe` and get a queue. When we `publish` to a user, we drop the event into every queue they have open.
-
-Then at the bottom of the file, we create one module-level broker instance that the whole app shares.
+We create one broker at import time, and every part of the app that imports `broker` talks to the same instance. There is one mailroom, shared by the whole process.
 
 ![Keying the broker by user id delivers a post to exactly the people who got a feed row, so a non-follower never sees a post that vanishes on refresh.](images/5.11-scene3-img1.png)
 
-The important design decision is that the broker is keyed by user id, not global. We deliver an event only to the specific recipients it's meant for, exactly the same people who got a feed row. If we broadcast every post to everyone, users would briefly see posts from people they don't follow, which would then vanish on refresh. Per-user delivery mirrors the feed, so live and refreshed always agree.
+The important design decision in this file is that the broker is keyed by user id, not global. We deliver an event only to the specific recipients it's meant for, exactly the same people who got a feed row. If we broadcast every post to everyone, users would briefly see posts from people they don't follow, which would then vanish on refresh. Per-user delivery mirrors the feed, so live and refreshed always agree.
 
 [Save the file](https://fmze.co/fftq-5.11.1).
 
-Now the streaming endpoint. This is what the browser connects to. Add it to `post/views.py`:
+Now the streaming endpoint, the phone line itself. This is the URL the browser will connect to and never hang up on. Add it to `post/views.py`, and we'll build it in three pieces:
 
 {lang=python,line-numbers=on,starting-line-number=191}
 ```
@@ -2960,7 +2997,14 @@ async def sse():
     # Capture the user id in the request context; the streaming generator
     # below outlives it, so it subscribes to THIS user's channel only.
     user_id = session["user_id"]
+```
 
+The route starts like any other, but the first thing we do hints at what's coming: we copy the user's id out of the session into a plain local variable. The function we're about to write will keep running long after this request's setup is finished, so we grab the id now, while the session is right in front of us.
+
+Here is the heart of it, and it deserves a slow read, because this is unlike any route we have written so far:
+
+{lang=python,line-numbers=on,starting-line-number=198}
+```
     async def gen():
         q = broker.subscribe(user_id)
         try:
@@ -2970,7 +3014,20 @@ async def sse():
         except asyncio.CancelledError:
             broker.unsubscribe(user_id, q)
             raise
+```
 
+Every handler we've built until now did its work and returned one finished response. This one can't, because its job is to keep the connection open and keep sending, for as long as the tab stays open. Python has a tool made for exactly that shape, the generator, and this is the first one in the course, so let's take it apart.
+
+The keyword to stare at is `yield`. A normal function returns once and it's finished. A function containing `yield` becomes a generator: calling it doesn't run the body at all, it hands back an object that values can be pulled from one at a time. Each time a value is pulled, the body runs until it reaches a `yield`, hands that value out, and then freezes right where it is, local variables and all. When the next value is asked for, it wakes up on the very next line and keeps going. Return says "here's my answer, I'm done". Yield says "here's one item, ask me again".
+
+Now follow our generator around its loop. `subscribe` gives this connection its own mailbox. `await q.get()` puts the function to sleep until an event lands in it, and remember, that sleep is free: Quart serves every other request while we wait. When a post arrives, `get` returns it, `yield` hands the encoded bytes out to be sent, and the loop comes back around to wait for the next event. The `while True` is not an accident to be nervous about, it is the point. This function is meant to run forever.
+
+Forever, that is, until the reader closes the tab. When that happens, Quart cancels the generator, and the cancellation surfaces inside it as an `asyncio.CancelledError`. We catch it, unsubscribe our queue so the broker stops delivering mail to a mailbox nobody will ever empty again, and re-raise so the shutdown completes normally. That try and except is the difference between a broker that stays tidy and one that leaks a queue for every visitor who ever left.
+
+Last piece, turning the generator into a response:
+
+{lang=python,line-numbers=on,starting-line-number=208}
+```
     response = await make_response(
         gen(),
         {
@@ -2983,9 +3040,9 @@ async def sse():
     return response
 ```
 
-We capture the user's id, then define an async generator `gen`. It subscribes to the broker and then loops forever, waiting for the next event on its queue and yielding the encoded bytes. Because it's a generator, Quart streams each yielded chunk to the browser as it arrives, keeping the connection open. And when the browser closes the tab, the generator is cancelled, so we catch that and unsubscribe cleanly.
+This is where Quart earns its keep. Hand `make_response` a string and you get a normal response. Hand it a generator, and Quart streams: every chunk the generator yields goes down the wire the moment it appears, and the connection stays open in between. That is the whole trick, and we wrote no networking code to get it.
 
-The headers are what make it a stream. The content type is `text/event-stream`, which is what server-sent events use, and we turn off caching and buffering. And crucially we set the response timeout to `None`, because this response is meant to stay open forever, not time out like a normal request. Add `make_response` and `asyncio` to the imports, along with `from utils.sse import broker`.
+The headers are the browser's half of the contract. `text/event-stream` is the content type the browser's `EventSource` object looks for, `no-cache` stops anything along the way from holding our events back, and `chunked` says the response body arrives in pieces with no known end. And the last line matters most: a normal response that took this long would be timed out and killed. Setting `timeout` to `None` tells Quart this response is supposed to last forever. Add `make_response` and `asyncio` to the imports, along with `from utils.sse import broker`.
 
 [Save the file](https://fmze.co/fftq-5.11.1a).
 
@@ -3003,35 +3060,65 @@ and widen the `utils.sse` import you added a moment ago so it brings in the even
 from utils.sse import ServerSentEvent, broker
 ```
 
-Inside `create_post`, give the new post's uid a name, so we have something to build a link from. Find the `insert` and pull `generate_uid()` out into its own variable:
+What should the payload carry? Everything the browser needs to draw a post card, and we already know exactly what that is, because our feed template draws one on every page load: the author's name and avatar, the message, any images, the timestamp, and the permalink. So let's gather precisely that, starting with the images. The image branch already stores each upload; have it also remember what it stored. Declare an empty list just above the branch, and append the image's URL and width after the insert:
 
-{lang=python,line-numbers=on,starting-line-number=137}
+{lang=python,line-numbers=on,starting-line-number=150}
 ```
-            post_uid = generate_uid()
-            result = await conn.execute(
-                insert(post_table).values(
-                    uid=post_uid,
+            images: List[Dict[str, Any]] = []
+            if form.image.data:
+                image_id, width = image_height_transform(
+                    form.image.data.read(), _posts_dir(), post_id
+                )
+                await conn.execute(
+                    insert(post_image_table).values(
+                        post_id=post_id, image_id=image_id, width=width, position=0
+                    )
+                )
+                images.append(
+                    {"url": post_image_url(post_id, image_id), "width": width}
+                )
 ```
 
-Now the payload itself:
+Next, the author and the post as the database knows them. The form gave us the message, but the database knows things the form never saw: the timestamp it stamped on the row, the uid it stored, and the author's avatar image. Still inside the transaction, fetch both rows:
 
-{lang=python,line-numbers=on,starting-line-number=161}
+{lang=python,line-numbers=on,starting-line-number=164}
+```
+            author = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.id == session["user_id"])
+                )
+            ).fetchone()
+            post_row = (
+                await conn.execute(select(post_table).where(post_table.c.id == post_id))
+            ).fetchone()
+```
+
+Now the payload itself, after the transaction closes:
+
+{lang=python,line-numbers=on,starting-line-number=173}
 ```
         payload = {
             "post_id": post_id,
-            "message": form.message.data,
-            "author_username": session["username"],
+            "uid": post_row.uid,
+            "message": post_row.message,
+            "created": post_row.created.isoformat(),
+            "author_id": author.id,
+            "author_username": author.username,
+            "avatar_url": image_url(author.id, author.image, "sm"),
             "permalink": url_for(
-                "post_app.detail", uid=post_uid, slug=slugify(form.message.data)
+                "post_app.detail", uid=post_row.uid, slug=slugify(post_row.message)
             ),
+            "images": images,
         }
+        # Push live ONLY to the same recipients that got a feed row (the
+        # author's followers + the author). A global broadcast would leak the
+        # post to every open page, including users who don't follow the author.
         await broker.publish_many(
-            recipient_ids,
-            ServerSentEvent(event="post", data=json.dumps(payload)),
+            recipient_ids, ServerSentEvent(event="post", data=json.dumps(payload))
         )
 ```
 
-We build a small dictionary describing the post, everything the browser needs to render a card, and serialize it to JSON. Then we `publish_many` to `recipient_ids`, the exact same set we just fanned the post out to. So the live push and the stored feed always reach the same people. Note we pass `event="post"`, which the browser will listen for by name.
+It reads like the dictionaries our feed loader builds, and that is the point: this is the same card, delivered over a different wire. The timestamp goes out as ISO text, because JSON has no date type, and the browser will parse it back into one. Then we `publish_many` to `recipient_ids`, the exact same set we just fanned the post out to, so the live push and the stored feed always reach the same people. Note we pass `event="post"`, which the browser will listen for by name.
 
 [Save the file](https://fmze.co/fftq-5.11.2).
 
@@ -3050,6 +3137,13 @@ document.addEventListener("DOMContentLoaded", () => {
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
 
+  const formatWhen = (iso) => {
+    const d = new Date(iso);
+    const month = d.toLocaleString("en-US", { month: "short" });
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${month} ${pad(d.getDate())}, ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
   es.addEventListener("post", (e) => {
     const post = JSON.parse(e.data);
     if (feed.querySelector(`[data-post-id="${post.post_id}"]`)) return;
@@ -3059,9 +3153,19 @@ document.addEventListener("DOMContentLoaded", () => {
     card.setAttribute("data-post-id", post.post_id);
     card.innerHTML = `
       <div class="card-body">
-        <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold">@${escapeHtml(post.author_username)}</a>
-        <p class="mb-1">${escapeHtml(post.message)}</p>
-        <a href="${post.permalink}" class="small text-muted">permalink</a>
+        <div class="d-flex">
+          <img src="${post.avatar_url}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40" alt="avatar">
+          <div class="flex-grow-1">
+            <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold">@${escapeHtml(post.author_username)}</a>
+            <p class="mb-1">${escapeHtml(post.message)}</p>
+            ${(post.images && post.images.length)
+              ? `<div class="d-flex gap-2 mb-2">${post.images
+                  .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
+                  .join("")}</div>`
+              : ""}
+            <a href="${post.permalink}" class="small text-muted">${formatWhen(post.created)}</a>
+          </div>
+        </div>
       </div>`;
     feed.prepend(card);
   });
@@ -3070,11 +3174,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 We open an `EventSource` pointed at `/sse`. That one line does all the connection work: it opens the stream, keeps it alive, and even reconnects automatically if the network drops.
 
-Next comes a small `escapeHtml` helper. It swaps the dangerous characters for their HTML entities, so anything a user typed is neutralised before it ever reaches the page. Then we listen for our named `post` event.
+Next come two small helpers. `escapeHtml` swaps the dangerous characters for their HTML entities, so anything a user typed is neutralised before it ever reaches the page. And `formatWhen` prints a timestamp as an abbreviated month, a day, a year, and the time, which is exactly how our feed template prints its own. That is not a coincidence, it is the job: if two cards in the same column ever spell the same moment differently, the live one gives itself away.
 
-When a post event arrives, we parse the JSON out of it. If a card for that post is already sitting on the page we return early, which guards against duplicates. Otherwise we create the card element, give it Bootstrap's card classes, and stamp the post id on it.
+Then we listen for our named `post` event. When one arrives, we parse the JSON out of it. If a card for that post is already sitting on the page we return early, which guards against duplicates. Otherwise we create the card element, give it Bootstrap's card classes, and stamp the post id on it.
 
-Now we assemble the markup with a template literal, the JavaScript string with backticks and dollar-brace placeholders. The author's handle links to their profile, the message goes in a paragraph, and a permalink sits underneath in muted text.
+Now we assemble the markup with a template literal, the JavaScript string with backticks and dollar-brace placeholders. And here discipline matters more than cleverness: this card is a twin of the one the feed template renders, because the reader will see the two stacked in the same column. The avatar at forty pixels, the author's handle linking to their profile, the message, any images at their fixed two-hundred-pixel height, and the timestamp linking to the post's permalink. Same structure, same classes, same order.
 
 Every piece of user text runs through `escapeHtml` on the way in, so a post can't inject HTML into somebody else's feed. Then we `prepend` the card, so the newest post lands at the top of the feed: no framework, just a string and one insert.
 

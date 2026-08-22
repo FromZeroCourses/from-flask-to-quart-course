@@ -134,10 +134,9 @@ async def create_post():
     if await form.validate_on_submit():
         engine = current_app.dbc  # type: ignore
         async with engine.begin() as conn:
-            post_uid = generate_uid()
             result = await conn.execute(
                 insert(post_table).values(
-                    uid=post_uid,
+                    uid=generate_uid(),
                     user_id=session["user_id"],
                     message=form.message.data,
                 )
@@ -148,6 +147,7 @@ async def create_post():
             recipient_ids.add(session["user_id"])
             await fan_out_post(conn, post_id, recipient_ids)
 
+            images: List[Dict[str, Any]] = []
             if form.image.data:
                 image_id, width = image_height_transform(
                     form.image.data.read(), _posts_dir(), post_id
@@ -157,18 +157,37 @@ async def create_post():
                         post_id=post_id, image_id=image_id, width=width, position=0
                     )
                 )
+                images.append(
+                    {"url": post_image_url(post_id, image_id), "width": width}
+                )
+
+            author = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.id == session["user_id"])
+                )
+            ).fetchone()
+            post_row = (
+                await conn.execute(select(post_table).where(post_table.c.id == post_id))
+            ).fetchone()
 
         payload = {
             "post_id": post_id,
-            "message": form.message.data,
-            "author_username": session["username"],
+            "uid": post_row.uid,
+            "message": post_row.message,
+            "created": post_row.created.isoformat(),
+            "author_id": author.id,
+            "author_username": author.username,
+            "avatar_url": image_url(author.id, author.image, "sm"),
             "permalink": url_for(
-                "post_app.detail", uid=post_uid, slug=slugify(form.message.data)
+                "post_app.detail", uid=post_row.uid, slug=slugify(post_row.message)
             ),
+            "images": images,
         }
+        # Push live ONLY to the same recipients that got a feed row (the
+        # author's followers + the author). A global broadcast would leak the
+        # post to every open page, including users who don't follow the author.
         await broker.publish_many(
-            recipient_ids,
-            ServerSentEvent(event="post", data=json.dumps(payload)),
+            recipient_ids, ServerSentEvent(event="post", data=json.dumps(payload))
         )
 
     return redirect(url_for(".home"))

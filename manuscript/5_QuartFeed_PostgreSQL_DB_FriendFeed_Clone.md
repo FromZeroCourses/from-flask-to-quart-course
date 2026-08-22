@@ -2913,8 +2913,6 @@ The behavior is one method. Add it to the class:
 
 Now the broker, the mailroom at the center of the design. It has exactly three jobs: hand a mailbox to every connection that opens, take mail in and deliver it to the right boxes, and throw the mailbox away when the connection closes. Start the class in the same file:
 
-![The broker has exactly three jobs: hand a mailbox to every connection that opens, drop each new post into the right boxes, and throw the mailbox away when the connection closes.](images/5.11-scene5-broker-jobs.png)
-
 {lang=python,line-numbers=on,starting-line-number=21}
 ```
 class Broker:

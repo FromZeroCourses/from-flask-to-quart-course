@@ -3028,6 +3028,8 @@ Here is the heart of it, and it deserves a slow read, because this is unlike any
 
 Every handler we've built until now did its work and returned one finished response. This one can't, because its job is to keep the connection open and keep sending, for as long as the tab stays open. Python has a tool made for exactly that shape, the generator, and this is the first one in the course, so let's take it apart.
 
+![A normal handler returns one finished response and closes, while a generator handler holds one connection open and keeps sending events down it.](images/5.11-scene11-img1.png)
+
 The keyword to stare at is `yield`. A normal function returns once and it's finished. A function containing `yield` becomes a generator: calling it doesn't run the body at all, it hands back an object that values can be pulled from one at a time. Each time a value is pulled, the body runs until it reaches a `yield`, hands that value out, and then freezes right where it is, local variables and all. When the next value is asked for, it wakes up on the very next line and keeps going. Return says "here's my answer, I'm done". Yield says "here's one item, ask me again".
 
 ![Return hands back one answer and finishes, while yield hands out one item and freezes the function where it stands, ready to resume on the next line.](images/5.11-scene11-img2.png)

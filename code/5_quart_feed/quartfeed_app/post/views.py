@@ -170,6 +170,26 @@ async def create_post():
                 await conn.execute(select(post_table).where(post_table.c.id == post_id))
             ).fetchone()
 
+        payload = {
+            "post_id": post_id,
+            "uid": post_row.uid,
+            "message": post_row.message,
+            "created": post_row.created.isoformat(),
+            "author_id": author.id,
+            "author_username": author.username,
+            "avatar_url": image_url(author.id, author.image, "sm"),
+            "permalink": url_for(
+                "post_app.detail", uid=post_row.uid, slug=slugify(post_row.message)
+            ),
+            "images": images,
+        }
+        # Push live ONLY to the same recipients that got a feed row (the
+        # author's followers + the author). A global broadcast would leak the
+        # post to every open page, including users who don't follow the author.
+        await broker.publish_many(
+            recipient_ids, ServerSentEvent(event="post", data=json.dumps(payload))
+        )
+
     return redirect(url_for(".home"))
 
 

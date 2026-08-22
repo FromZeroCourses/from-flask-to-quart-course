@@ -3056,6 +3056,8 @@ Last piece, turning the generator into a response:
 
 This is where Quart earns its keep. Hand `make_response` a string and you get a normal response. Hand it a generator, and Quart streams: every chunk the generator yields goes down the wire the moment it appears, and the connection stays open in between. That is the whole trick, and we wrote no networking code to get it.
 
+![Hand make_response a string and you get one finished response; hand it a generator and Quart streams it, doing all the chunk framing and socket work we never wrote.](images/5.11-scene12-img1.png)
+
 The headers are the browser's half of the contract. `text/event-stream` is the content type the browser's `EventSource` object looks for, `no-cache` stops anything along the way from holding our events back, and `chunked` says the response body arrives in pieces with no known end. And the last line matters most: a normal response that took this long would be timed out and killed. Setting `timeout` to `None` tells Quart this response is supposed to last forever. Add `make_response` and `asyncio` to the imports, along with `from utils.sse import broker`.
 
 [Save the file](https://fmze.co/fftq-5.11.1a).

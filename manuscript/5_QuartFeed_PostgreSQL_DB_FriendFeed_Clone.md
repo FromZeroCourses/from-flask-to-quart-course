@@ -2997,6 +2997,8 @@ The important design decision in this file is that the broker is keyed by user i
 
 Now the streaming endpoint, the phone line itself. This is the URL the browser will connect to and never hang up on. Add it to `post/views.py`, and we'll build it in three pieces:
 
+![The /sse route is one HTTP connection the browser opens once and never closes, so events can be pushed down it the moment they happen.](images/5.11-scene10-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=191}
 ```
 @post_app.route("/sse")

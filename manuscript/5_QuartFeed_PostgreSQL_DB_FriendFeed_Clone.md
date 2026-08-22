@@ -1,5 +1,13 @@
 # QuartFeed, an SSE Application using PostgreSQL <!-- 5 -->
 
+<!-- PRODUCTION NOTE (2026-08-22): the finished app's browser-side JS helpers
+are not taught anywhere yet: the window.linkify port, timeago.js, and
+interactions.js. 5.11's live card deliberately ships without them (escapeHtml
+plus a formatted date, matching the server card at that stage). Introduce them
+in a later module, 5.12 or beyond, and upgrade static/js/broadcast.js to use
+them, so the step branches converge to finished_apps/. Do NOT introduce them
+in 5.11. -->
+
 ## Introduction to Server Sent Events <!-- 5.1 -->
 Server Sent Events, or SSEs, or EventSource in JavaScript, are an extension to HTTP that allow a client to keep a connection open to a server, thereby allowing the server to send events to the client as it chooses.
 
@@ -2902,6 +2910,8 @@ The behavior is one method. Add it to the class:
 ```
 
 `encode` builds the wire text from the inside out. It starts with the `data:` line, then prepends `event:` if we set one, then `id:`, and finally adds the blank line and converts the whole thing to bytes. So a new post goes down the wire as an `event: post` line, a `data:` line with the JSON right after it, and then an empty line. That empty line is not decoration, it is the protocol: it's how the browser knows this message is complete and the next one can begin.
+
+![One SSE message on the wire: an event line, a data line, and the blank line that tells the browser the message is complete.](images/5.11-scene4-img1.png)
 
 Now the broker, the mailroom at the center of the design. It has exactly three jobs: hand a mailbox to every connection that opens, take mail in and deliver it to the right boxes, and throw the mailbox away when the connection closes. Start the class in the same file:
 

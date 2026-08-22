@@ -2932,6 +2932,8 @@ The whole state is one dictionary: user id to a set of queues. Why a set and not
 
 And what's an `asyncio.Queue`? It is a mailbox built for async code. One side puts items in; the other side awaits until something arrives. The waiting is the beautiful part: an async function that is awaiting on an empty queue costs nothing, the event loop simply runs other work until there is mail. We'll see that pay off in a moment.
 
+![An asyncio Queue is a mailbox: one side puts, the other awaits, and waiting on an empty queue costs nothing while the event loop runs other work.](images/5.11-scene5-img2.png)
+
 Delivery first. Add the two publish methods:
 
 {lang=python,line-numbers=on,starting-line-number=33}

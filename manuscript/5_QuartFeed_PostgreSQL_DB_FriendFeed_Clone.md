@@ -2944,7 +2944,7 @@ Delivery first. Add the two publish methods:
             await q.put(event)
 ```
 
-`publish` delivers to one user: look up their queues and put a copy of the event in each. Two small details are doing quiet work here. `get(user_id, ())` means a user with no open pages gets an empty tuple back, so we deliver to no one and raise no error; being offline is not a special case. And we wrap the set in `list()` before looping, because connections can open or close while we're awaiting inside the loop, and mutating a set mid-iteration is an error in Python.
+`publish` delivers to one user: look up their queues and put a copy of the event in each.
 
 {lang=python,line-numbers=on,starting-line-number=38}
 ```
@@ -2956,7 +2956,9 @@ Delivery first. Add the two publish methods:
             await self.publish(user_id, event)
 ```
 
-`publish_many` is the fan-out twin, one event to a whole list of recipients. Wrapping `user_ids` in `set()` deduplicates, so nobody gets the same post twice even if they show up twice in the recipient list.
+Two small details are doing quiet work here. Looking a user up with an empty tuple as the default means someone with no open pages gets nothing back, so we deliver to no one and raise no error; being offline is not a special case. And we wrap that set in a list before looping, because connections can open or close while we're awaiting inside the loop, and mutating a set mid-iteration is an error in Python.
+
+`publish_many` is the fan-out twin, one event to a whole list of recipients. Wrapping the recipients in a set deduplicates, so nobody gets the same post twice even if they show up twice in the recipient list.
 
 Now the other side of the counter, how a connection gets a mailbox and gives it back:
 

@@ -2913,7 +2913,7 @@ The behavior is one method. Add it to the class:
 
 So a new post goes down the wire as an `event: post` line, a `data:` line with the JSON right after it, and then an empty line. That empty line is not decoration, it is the protocol: it's how the browser knows this message is complete and the next one can begin.
 
-Now the broker, the mailroom at the center of the design. It has exactly three jobs: hand a mailbox to every connection that opens, take mail in and deliver it to the right boxes, and throw the mailbox away when the connection closes. Start the class in the same file:
+Now the broker, the mailroom at the center of the design. It has exactly three jobs: hand a mailbox to every connection that opens, take mail in and deliver it to the right boxes, and throw the mailbox away when the connection closes. Start the class in the same file, and read the docstring as it lands. Each user gets their own set of connection queues, so an event reaches only the users it is addressed to, the same recipients that got a `feed` row. A global broadcast would be the easy thing to write, and it would leak every post to every open page, including users who don't follow the author.
 
 {lang=python,line-numbers=on,starting-line-number=21}
 ```

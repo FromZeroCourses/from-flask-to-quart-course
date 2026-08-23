@@ -2909,7 +2909,9 @@ The behavior is one method. Add it to the class:
         return (msg + "\n").encode("utf-8")
 ```
 
-`encode` builds the wire text from the inside out. It starts with the `data:` line, then prepends `event:` if we set one, then `id:`, and finally adds the blank line and converts the whole thing to bytes. So a new post goes down the wire as an `event: post` line, a `data:` line with the JSON right after it, and then an empty line. That empty line is not decoration, it is the protocol: it's how the browser knows this message is complete and the next one can begin.
+`encode` builds the wire text from the inside out. It starts with the `data:` line, then prepends `event:` if we set one, then `id:`, and finally adds the blank line and converts the whole thing to bytes.
+
+So a new post goes down the wire as an `event: post` line, a `data:` line with the JSON right after it, and then an empty line. That empty line is not decoration, it is the protocol: it's how the browser knows this message is complete and the next one can begin.
 
 Now the broker, the mailroom at the center of the design. It has exactly three jobs: hand a mailbox to every connection that opens, take mail in and deliver it to the right boxes, and throw the mailbox away when the connection closes. Start the class in the same file:
 

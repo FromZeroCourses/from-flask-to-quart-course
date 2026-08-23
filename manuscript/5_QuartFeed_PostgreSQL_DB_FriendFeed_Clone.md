@@ -3058,7 +3058,7 @@ The headers are the browser's half of the contract. `text/event-stream` is the c
 
 [Save the file](https://fmze.co/fftq-5.11.1a).
 
-Now we publish an event when a post is created. Back in `create_post`, after the fan-out, build a payload and push it to the same recipients. Add the imports and the publish call:
+Now, back in `create_post`, right after the fan-out, we'll publish the event to those same recipients. That needs two imports, and `json` is the first:
 
 {lang=python,line-numbers=on,starting-line-number=2}
 ```

@@ -3312,7 +3312,7 @@ feed_table = Table(
 
 We add `reason_user_id`, who caused the post to bubble, and `reason_type`, what they did, like "comment". Both are nullable, because a post that's in your feed from a plain follow has no special reason.
 
-The other addition is the `UniqueConstraint` on `user_id` and `post_id` together. This says a post can appear at most once in any given feed. That matters now, because a post could reach your feed two ways at once: you follow the author, and a friend also comments on it. Without the constraint we'd get a duplicate row. Add `String` and `UniqueConstraint` to the imports.
+The other addition is the `UniqueConstraint` on `user_id` and `post_id` together. This says a post can appear at most once in any given feed. That matters now, because a post could reach your feed two ways at once: you follow the author, and a friend also comments on it. Without the constraint we'd get a duplicate row. Add `UniqueConstraint` to the imports.
 
 [Save the file](https://fmze.co/fftq-5.12.2).
 
@@ -3409,7 +3409,7 @@ We switch to Postgres's own `insert` so we can chain `on_conflict_do_update`. No
 
 Bubbling has a live half too. When a post bubbles into your feed, we don't want to wait for a refresh: the card should arrive over SSE, exactly like a brand-new post does, carrying its "commented on this" attribution. That means we need to build the same post payload our create post view sends, from anywhere. Open `post/views.py` and add a reusable builder right under `_post_images`:
 
-{lang=python,line-numbers=on,starting-line-number=58}
+{lang=python,line-numbers=on,starting-line-number=56}
 ```
 async def build_post_payload(
     conn: Any,
@@ -3561,7 +3561,7 @@ Two changes carry the lesson. The `reason_user` alias joins the user table a sec
 
 Two routes need small updates to match. The `feed` route now builds a form, because the comment box on every card needs a CSRF token to submit. And the permalink page should show a post's comments too, so it loads through the same machinery. Update both, and add the single-post loader they share:
 
-{lang=python,line-numbers=on,starting-line-number=182}
+{lang=python,line-numbers=on,starting-line-number=180}
 ```
 async def _load_single_post_by_uid(
     conn: Any, uid: str, viewer_user_id: int
@@ -3607,7 +3607,7 @@ async def _load_single_post_by_uid(
 
 Then replace the `feed` and `detail` routes:
 
-{lang=python,line-numbers=on,starting-line-number=236}
+{lang=python,line-numbers=on,starting-line-number=235}
 ```
 @post_app.route("/feed")
 @login_required
@@ -3845,7 +3845,7 @@ The `comment_row` macro keeps each comment's markup in one place, because the ca
 
 Finally, the browser side. `broadcast.js` needs to learn three things: the cards it builds live need the same comment form, a bubbled post's card should carry its attribution, and a `comment` event should append to the right card. First, grab a CSRF token near the top, right after the `EventSource` line, by borrowing the one already rendered on the page:
 
-{lang=js,line-numbers=on,starting-line-number=6}
+{lang=js,line-numbers=on,starting-line-number=7}
 ```
   // Reuse the CSRF token already rendered on the page (from the post form)
   // so dynamically-created comment forms for posts that arrived over
@@ -3863,7 +3863,7 @@ For that selector to find anything, the post form needs the id. In `templates/po
 
 Back in `broadcast.js`, update the card template inside the `post` listener: the attribution span after the author link, and the comments container plus the form after the timestamp line:
 
-{lang=js,line-numbers=on,starting-line-number=31}
+{lang=js,line-numbers=on,starting-line-number=37}
 ```
             <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold">@${escapeHtml(post.author_username)}</a>
             ${(post.reason_type === "comment" && post.reason_username)
@@ -3886,7 +3886,7 @@ Back in `broadcast.js`, update the card template inside the `post` listener: the
 
 And add the `comment` listener after the `post` one: find the card by its post id, and append the comment in the same shape the template macro renders:
 
-{lang=js,line-numbers=on,starting-line-number=56}
+{lang=js,line-numbers=on,starting-line-number=60}
 ```
   es.addEventListener("comment", (e) => {
     const comment = JSON.parse(e.data);
@@ -4127,7 +4127,7 @@ The first test tells the whole bubbling story. The viewer follows the commenter 
 
 Bubbling isn't only about the database; it also pushes live. When someone you follow comments on a post you've never seen, that post should slide into your open feed over SSE without a refresh. Add this test to `test_feed.py`. It uses the broker directly to capture what a viewer's live connection would receive.
 
-{lang=python,line-numbers=on,starting-line-number=138}
+{lang=python,line-numbers=on,starting-line-number=129}
 ```
 @pytest.mark.asyncio
 async def test_comment_live_bubbles_post_over_sse(create_test_app):

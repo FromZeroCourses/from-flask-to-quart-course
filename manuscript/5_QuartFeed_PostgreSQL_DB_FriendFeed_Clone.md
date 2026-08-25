@@ -3262,7 +3262,11 @@ comment_table = Table(
 )
 ```
 
-Nothing surprising: a comment belongs to a post and an author, holds some text, and stamps its own creation time. The form is just as small. Create `comment/forms.py`:
+Nothing surprising: a comment belongs to a post and an author, holds some text, and stamps its own creation time.
+
+[Save the file](https://fmze.co/fftq-5.12.1).
+
+The form is just as small. Create `comment/forms.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -3280,7 +3284,7 @@ class CommentForm(QuartForm):
 
 One required text field with a sane length cap, exactly like our post form.
 
-[Save the file](https://fmze.co/fftq-5.12.1).
+[Save the file](https://fmze.co/fftq-5.12.1.1).
 
 Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why: "Robert Scoble commented on this". So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, and give the table a comment header that captures the two routes into a feed, because six months from now this table is the one you'll have to re-derive in your head:
 

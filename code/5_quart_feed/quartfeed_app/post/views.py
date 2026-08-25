@@ -174,6 +174,48 @@ async def _load_feed(
     return posts
 
 
+async def _load_single_post_by_uid(
+    conn: Any, uid: str, viewer_user_id: int
+) -> Optional[Dict[str, Any]]:
+    """Load ONE post by its permalink uid (any post, not restricted to the feed).
+
+    Returns the same dict shape as ``_load_feed``'s items so the shared card
+    partial renders it unchanged, or ``None`` if the post does not exist.
+    """
+    row = (
+        await conn.execute(
+            select(
+                post_table.c.id.label("post_id"),
+                post_table.c.uid,
+                post_table.c.message,
+                post_table.c.created,
+                user_table.c.id.label("author_id"),
+                user_table.c.username.label("author_username"),
+                user_table.c.image.label("author_image"),
+            )
+            .select_from(
+                post_table.join(user_table, post_table.c.user_id == user_table.c.id)
+            )
+            .where(post_table.c.uid == uid)
+        )
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    extras = await _post_extras(conn, row.post_id, viewer_user_id)
+    return {
+        "post_id": row.post_id,
+        "uid": row.uid,
+        "message": row.message,
+        "created": row.created,
+        "author_id": row.author_id,
+        "author_username": row.author_username,
+        "avatar_url": image_url(row.author_id, row.author_image),
+        **extras,
+    }
+
+
 @post_app.route("/")
 async def home():
     if session.get("username") is None:
@@ -190,17 +232,45 @@ async def home():
 @post_app.route("/feed")
 @login_required
 async def feed():
-    """One page of feed cards for infinite scroll. Empty when exhausted."""
+    """Return one page of feed cards (for infinite scroll). Empty when exhausted."""
     try:
         offset = int(request.args.get("offset", 0))
     except (TypeError, ValueError):
         offset = 0
 
+    form = await PostForm.create_form()
     engine = current_app.dbc  # type: ignore
     async with engine.begin() as conn:
-        posts = await _load_feed(conn, session["user_id"], offset=offset)
+        posts = await _load_feed(conn, session["user_id"], offset=offset, limit=10)
 
-    return await render_template("post/_feed_items.html", posts=posts)
+    return await render_template("post/_feed_items.html", posts=posts, form=form)
+
+
+@post_app.route("/post/<uid>/")
+@post_app.route("/post/<uid>/<slug>")
+@login_required
+async def detail(uid: str, slug: Optional[str] = None):
+    """SEO permalink page for a single post: /post/<uid>/<slug>.
+
+    The post is looked up by its opaque ``uid``; the ``slug`` is cosmetic. If
+    the slug in the URL is missing or stale, redirect to the canonical URL so
+    every post has one address search engines can index.
+    """
+    form = await PostForm.create_form()
+    engine = current_app.dbc  # type: ignore
+    async with engine.begin() as conn:
+        post = await _load_single_post_by_uid(conn, uid, session["user_id"])
+
+    if post is None:
+        abort(404)
+
+    canonical_slug = slugify(post["message"])
+    if slug != canonical_slug:
+        return redirect(
+            url_for("post_app.detail", uid=uid, slug=canonical_slug), code=301
+        )
+
+    return await render_template("post/detail.html", post=post, form=form)
 
 
 @post_app.route("/post", methods=["POST"])
@@ -268,35 +338,6 @@ async def create_post():
         )
 
     return redirect(url_for(".home"))
-
-
-@post_app.route("/post/<uid>/")
-@post_app.route("/post/<uid>/<slug>")
-@login_required
-async def detail(uid: str, slug: Optional[str] = None):
-    engine = current_app.dbc  # type: ignore
-    async with engine.begin() as conn:
-        row = (
-            await conn.execute(select(post_table).where(post_table.c.uid == uid))
-        ).fetchone()
-
-        if row is None:
-            abort(404)
-
-        post = {
-            "uid": row.uid,
-            "message": row.message,
-            "created": row.created,
-            "images": await _post_images(conn, row.id),
-        }
-
-    canonical_slug = slugify(post["message"])
-    if slug != canonical_slug:
-        return redirect(
-            url_for("post_app.detail", uid=uid, slug=canonical_slug), code=301
-        )
-
-    return await render_template("post/detail.html", post=post)
 
 
 @post_app.route("/sse")

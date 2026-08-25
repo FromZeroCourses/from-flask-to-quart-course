@@ -3286,7 +3286,7 @@ One required text field with a sane length cap, exactly like our post form.
 
 [Save the file](https://fmze.co/fftq-5.12.1.1).
 
-Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why, with the card saying who commented on it. So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, adding three lines at the bottom of the table, right above its closing parenthesis — the highlighted lines are the new ones:
+Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why, with the card saying who commented on it. So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, adding three lines at the bottom of the table, right above its closing parenthesis. The highlighted lines are the new ones:
 
 {lang=python,line-numbers=on,starting-line-number=26}
 ```

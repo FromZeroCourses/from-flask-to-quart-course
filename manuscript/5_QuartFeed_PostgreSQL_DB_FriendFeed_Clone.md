@@ -3286,21 +3286,10 @@ One required text field with a sane length cap, exactly like our post form.
 
 [Save the file](https://fmze.co/fftq-5.12.1.1).
 
-Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why: "Robert Scoble commented on this". So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, and give the table a comment header that captures the two routes into a feed, because six months from now this table is the one you'll have to re-derive in your head:
+Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why, with the card saying who commented on it. So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, adding the two `reason` columns and the `UniqueConstraint` at the bottom of the table:
 
 {lang=python,line-numbers=on,starting-line-number=26}
 ```
-# Fan-out table: when a user posts, one feed row is inserted for every
-# follower of that user AND for the user themselves. feed.user_id is the
-# feed OWNER (the recipient), not the author.
-#
-# A post also surfaces ("bubbles") into your feed when someone you follow
-# comments on it, even if you don't follow the author. reason_user_id /
-# reason_type record WHY the post is in your feed so the card can show
-# "(Robert Scoble commented on this)". A direct follow leaves them NULL.
-#
-# UNIQUE(user_id, post_id): a post appears at most once per feed. Following
-# the author AND having a followee comment on it must not double-insert.
 feed_table = Table(
     "feed",
     metadata,
@@ -3343,25 +3332,10 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "comment
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Rewrite `post/feed_ops.py`:
+Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Open `post/feed_ops.py`. Three things happen here: `add_to_feed` learns the two reason columns and becomes an upsert, a new `bubble_post` joins at the bottom, and `fan_out_post` stays exactly as it is:
 
 {lang=python,line-numbers=on}
 ```
-"""Operations on the ``feed`` table.
-
-The ``feed`` table is the materialized per-user timeline. Two things put a post
-in your feed:
-
-1. Fan-out — when someone you follow (or you) posts, the post lands directly in
-   your feed (no attribution).
-2. Bubbling — when someone you follow comments on a post, that post surfaces in
-   your feed even if you don't follow the author, tagged with the reason
-   ("<name> commented on this").
-
-UNIQUE(user_id, post_id) guarantees a post appears at most once per feed, so a
-post you'd get from both routes is de-duplicated. On a conflict we bump
-``updated`` so fresh activity floats the post back to the top.
-"""
 from typing import Iterable, Optional
 
 from sqlalchemy import func
@@ -3392,7 +3366,7 @@ async def add_to_feed(
 
 
 async def fan_out_post(conn, post_id: int, recipient_ids: Iterable[int]) -> None:
-    """A brand-new post lands directly in the author's + followers' feeds."""
+    """A brand-new post lands directly in the author's and followers' feeds."""
     for user_id in set(recipient_ids):
         await add_to_feed(conn, user_id, post_id)
 
@@ -3411,7 +3385,7 @@ async def bubble_post(
 
 We switch to Postgres's own `insert` so we can chain `on_conflict_do_update`. Now if a feed row for this user and post already exists, instead of failing on the unique constraint, we bump its `updated` timestamp, which floats the post back to the top. That's exactly what we want: fresh activity, no duplicates.
 
-`fan_out_post` is unchanged in spirit, and the new `bubble_post` is its sibling: it adds a post to feeds and records the reason it bubbled. Same machinery, one carries attribution.
+`fan_out_post` is untouched, and the new `bubble_post` is its sibling: it adds a post to feeds and records the reason it bubbled. Same machinery, one carries attribution.
 
 [Save the file](https://fmze.co/fftq-5.12.4).
 

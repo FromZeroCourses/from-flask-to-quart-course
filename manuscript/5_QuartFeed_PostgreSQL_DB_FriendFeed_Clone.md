@@ -3330,7 +3330,11 @@ from post.models import post_table, post_image_table  # noqa: F401
 from comment.models import comment_table  # noqa: F401
 ```
 
-[Save the file](https://fmze.co/fftq-5.12.3) and migrate. One revision picks up everything at once: the new `comment` table, the two reason columns, and the unique constraint:
+[Save the file](https://fmze.co/fftq-5.12.3). Alembic runs inside the container, so we rebuild the web image first.
+
+Now let Alembic compare our models against the database and write the revision for us. One revision picks up everything at once: the new `comment` table, the two reason columns, and the unique constraint.
+
+Then we apply it. That one upgrade brings the database in line with our models, and every change lands together:
 
 {lang=bash,line-numbers=off}
 ```

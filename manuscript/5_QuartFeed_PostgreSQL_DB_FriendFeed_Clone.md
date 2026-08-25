@@ -3917,11 +3917,13 @@ And add the `comment` listener after the `post` one: find the card by its post i
   });
 ```
 
+[Save the file](https://fmze.co/fftq-5.12.11).
+
 Restart, open two browsers, and comment from one. The comment appears under the post on every feed showing it, and if your follower didn't have the post at all, the whole card slides in first, tagged with who commented, live.
 
 [Save the file](https://fmze.co/fftq-5.12.11).
 
-### Testing comments and bubbling <!-- 5.12.1 -->
+### Testing comments and bubbling <!--  -->
 
 Comments do more than attach text to a post; commenting bubbles that post into the feeds of the people who follow you, even if they don't follow the original author. That bubbling is subtle logic, so it's worth testing carefully. Two quick tests cover the basics, then two more prove the bubbling actually works.
 

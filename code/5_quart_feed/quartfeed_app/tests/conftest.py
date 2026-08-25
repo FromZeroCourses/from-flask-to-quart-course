@@ -14,6 +14,7 @@ from db import metadata
 from user.models import user_table  # noqa: F401
 from relationship.models import relationship_table  # noqa: F401
 from post.models import post_table, feed_table  # noqa: F401
+from comment.models import comment_table  # noqa: F401
 
 
 @pytest_asyncio.fixture

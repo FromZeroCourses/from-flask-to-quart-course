@@ -3542,9 +3542,6 @@ async def _load_feed(
                 "author_id": row.author_id,
                 "author_username": row.author_username,
                 "avatar_url": image_url(row.author_id, row.author_image, "sm"),
-                "permalink": url_for(
-                    "post_app.detail", uid=row.uid, slug=slugify(row.message)
-                ),
                 # Why this post is in the feed (None for a direct follow).
                 "reason_type": row.reason_type,
                 "reason_username": row.reason_username,
@@ -3557,11 +3554,13 @@ async def _load_feed(
 
 Two changes carry the lesson. The `reason_user` alias joins the user table a second time, because one query now needs two different users: the post's author, and whoever caused the bubble. And it's an `outerjoin`, because most feed rows have no reason at all, and an inner join would silently drop every directly-followed post. Then each post spreads in its `_post_extras`, so the card gets its comments without the template running a single query.
 
+One thing quietly disappeared: the permalink. `url_for` only works inside a request, and we want `_load_feed` callable from tests, where there is no request at all. So the loader stays pure data, and the template will build the permalink itself through a small global we'll register along with the blueprint.
+
 [Save the file](https://fmze.co/fftq-5.12.6).
 
 Two routes need small updates to match. The `feed` route now builds a form, because the comment box on every card needs a CSRF token to submit. And the permalink page should show a post's comments too, so it loads through the same machinery. Update both, and add the single-post loader they share:
 
-{lang=python,line-numbers=on,starting-line-number=180}
+{lang=python,line-numbers=on,starting-line-number=177}
 ```
 async def _load_single_post_by_uid(
     conn: Any, uid: str, viewer_user_id: int
@@ -3607,7 +3606,7 @@ async def _load_single_post_by_uid(
 
 Then replace the `feed` and `detail` routes:
 
-{lang=python,line-numbers=on,starting-line-number=235}
+{lang=python,line-numbers=on,starting-line-number=232}
 ```
 @post_app.route("/feed")
 @login_required
@@ -3771,7 +3770,17 @@ The ordering here is the whole design. First we push the post itself, with its a
 
 [Save the file](https://fmze.co/fftq-5.12.8).
 
-The blueprint exists but the app doesn't know it yet. Register it in `application.py`, next to the others:
+The blueprint exists but the app doesn't know it yet. Register it in `application.py`, next to the others, and while we're here, add the little permalink helper the templates need now that `_load_feed` no longer builds URLs. Add `url_for` to the quart import and `slugify` next to `linkify`:
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+from quart import Quart, url_for
+
+from db import get_engine
+from utils.helpers import linkify, slugify
+```
+
+Then the registration and the global:
 
 {lang=python,line-numbers=on,starting-line-number=14}
 ```
@@ -3784,7 +3793,14 @@ The blueprint exists but the app doesn't know it yet. Register it in `applicatio
     app.register_blueprint(relationship_app)
     app.register_blueprint(post_app)
     app.register_blueprint(comment_app)
+
+    @app.template_global()
+    def post_url(uid: str, message: str) -> str:
+        """Canonical SEO permalink for a post: /post/<uid>/<slug>."""
+        return url_for("post_app.detail", uid=uid, slug=slugify(message))
 ```
+
+`template_global` makes `post_url` callable from any template, so the card can build a post's canonical address from data alone.
 
 [Save the file](https://fmze.co/fftq-5.12.9).
 
@@ -3818,13 +3834,9 @@ Now let's show all of it. The post card gets three additions: the attribution li
                     {% endfor %}
                 </div>
                 {% endif %}
-                {% if post.permalink %}
-                <a href="{{ post.permalink }}" class="small text-muted">
+                <a href="{{ post_url(post.uid, post.message) }}" class="small text-muted">
                     {{ post.created.strftime('%b %d, %Y %H:%M') }}
                 </a>
-                {% else %}
-                <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
-                {% endif %}
                 <div class="comments mt-2">
                     {% for c in post.comments %}{{ comment_row(c) }}{% endfor %}
                 </div>

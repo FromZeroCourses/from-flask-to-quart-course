@@ -3262,14 +3262,41 @@ comment_table = Table(
 )
 ```
 
-Nothing surprising: a comment belongs to a post and an author, holds some text, and stamps its own creation time. Add a matching `CommentForm` in a `comment/forms.py` with a single required text field, exactly like our post form.
+Nothing surprising: a comment belongs to a post and an author, holds some text, and stamps its own creation time. The form is just as small. Create `comment/forms.py`:
+
+{lang=python,line-numbers=on}
+```
+from quart_wtf import QuartForm
+from wtforms import TextAreaField
+from wtforms.validators import DataRequired, Length
+
+
+class CommentForm(QuartForm):
+    comment = TextAreaField(
+        "Add a comment",
+        validators=[DataRequired(), Length(max=500)],
+    )
+```
+
+One required text field with a sane length cap, exactly like our post form.
 
 [Save the file](https://fmze.co/fftq-5.12.1).
 
-Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why: "Robert Scoble commented on this". So the feed row needs to record the reason. Update `feed_table` in `post/models.py`:
+Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why: "Robert Scoble commented on this". So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, and give the table a comment header that captures the two routes into a feed, because six months from now this table is the one you'll have to re-derive in your head:
 
-{lang=python,line-numbers=on,starting-line-number=27}
+{lang=python,line-numbers=on,starting-line-number=26}
 ```
+# Fan-out table: when a user posts, one feed row is inserted for every
+# follower of that user AND for the user themselves. feed.user_id is the
+# feed OWNER (the recipient), not the author.
+#
+# A post also surfaces ("bubbles") into your feed when someone you follow
+# comments on it, even if you don't follow the author. reason_user_id /
+# reason_type record WHY the post is in your feed so the card can show
+# "(Robert Scoble commented on this)". A direct follow leaves them NULL.
+#
+# UNIQUE(user_id, post_id): a post appears at most once per feed. Following
+# the author AND having a followee comment on it must not double-insert.
 feed_table = Table(
     "feed",
     metadata,
@@ -3287,12 +3314,24 @@ We add `reason_user_id`, who caused the post to bubble, and `reason_type`, what 
 
 The other addition is the `UniqueConstraint` on `user_id` and `post_id` together. This says a post can appear at most once in any given feed. That matters now, because a post could reach your feed two ways at once: you follow the author, and a friend also comments on it. Without the constraint we'd get a duplicate row. Add `String` and `UniqueConstraint` to the imports.
 
-[Save the file](https://fmze.co/fftq-5.12.2) and migrate to add the columns and the constraint:
+[Save the file](https://fmze.co/fftq-5.12.2).
+
+Before we migrate, one small but easy-to-forget step. Alembic only knows about the tables whose models `migrations/env.py` imports, and our brand-new `comment` table isn't among them yet. Add it right under the other model imports:
+
+{lang=python,line-numbers=on,starting-line-number=16}
+```
+from user.models import user_table  # noqa: F401
+from relationship.models import relationship_table  # noqa: F401
+from post.models import post_table, post_image_table  # noqa: F401
+from comment.models import comment_table  # noqa: F401
+```
+
+[Save the file](https://fmze.co/fftq-5.12.3) and migrate. One revision picks up everything at once: the new `comment` table, the two reason columns, and the unique constraint:
 
 {lang=bash,line-numbers=off}
 ```
 $ docker compose build web
-$ docker compose run --rm web uv run alembic revision --autogenerate -m "feed bubbling: reason columns and unique"
+$ docker compose run --rm web uv run alembic revision --autogenerate -m "comments and feed bubbling"
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
@@ -3300,6 +3339,21 @@ Now that a post can arrive by two routes, our simple "insert a feed row" isn't s
 
 {lang=python,line-numbers=on}
 ```
+"""Operations on the ``feed`` table.
+
+The ``feed`` table is the materialized per-user timeline. Two things put a post
+in your feed:
+
+1. Fan-out — when someone you follow (or you) posts, the post lands directly in
+   your feed (no attribution).
+2. Bubbling — when someone you follow comments on a post, that post surfaces in
+   your feed even if you don't follow the author, tagged with the reason
+   ("<name> commented on this").
+
+UNIQUE(user_id, post_id) guarantees a post appears at most once per feed, so a
+post you'd get from both routes is de-duplicated. On a conflict we bump
+``updated`` so fresh activity floats the post back to the top.
+"""
 from typing import Iterable, Optional
 
 from sqlalchemy import func
@@ -3315,6 +3369,7 @@ async def add_to_feed(
     reason_user_id: Optional[int] = None,
     reason_type: Optional[str] = None,
 ) -> None:
+    """Insert one feed row for a recipient, or bump it if it already exists."""
     stmt = pg_insert(feed_table).values(
         user_id=user_id,
         post_id=post_id,
@@ -3329,13 +3384,19 @@ async def add_to_feed(
 
 
 async def fan_out_post(conn, post_id: int, recipient_ids: Iterable[int]) -> None:
+    """A brand-new post lands directly in the author's + followers' feeds."""
     for user_id in set(recipient_ids):
         await add_to_feed(conn, user_id, post_id)
 
 
 async def bubble_post(
-    conn, post_id: int, recipient_ids: Iterable[int], reason_user_id: int, reason_type: str
+    conn,
+    post_id: int,
+    recipient_ids: Iterable[int],
+    reason_user_id: int,
+    reason_type: str,
 ) -> None:
+    """Surface an existing post into more feeds because someone engaged with it."""
     for user_id in set(recipient_ids):
         await add_to_feed(conn, user_id, post_id, reason_user_id, reason_type)
 ```
@@ -3344,9 +3405,259 @@ We switch to Postgres's own `insert` so we can chain `on_conflict_do_update`. No
 
 `fan_out_post` is unchanged in spirit, and the new `bubble_post` is its sibling: it adds a post to feeds and records the reason it bubbled. Same machinery, one carries attribution.
 
-[Save the file](https://fmze.co/fftq-5.12.3).
+[Save the file](https://fmze.co/fftq-5.12.4).
 
-Now the comment view ties it together. Create `comment/views.py`:
+Bubbling has a live half too. When a post bubbles into your feed, we don't want to wait for a refresh: the card should arrive over SSE, exactly like a brand-new post does, carrying its "commented on this" attribution. That means we need to build the same post payload our create post view sends, from anywhere. Open `post/views.py` and add a reusable builder right under `_post_images`:
+
+{lang=python,line-numbers=on,starting-line-number=58}
+```
+async def build_post_payload(
+    conn: Any,
+    post_id: int,
+    reason_type: Optional[str] = None,
+    reason_username: Optional[str] = None,
+) -> Dict[str, Any]:
+    """SSE 'post' payload for a post — shared by create_post and live bubbling."""
+    row = (
+        await conn.execute(
+            select(
+                post_table.c.id.label("post_id"),
+                post_table.c.uid,
+                post_table.c.message,
+                post_table.c.created,
+                user_table.c.id.label("author_id"),
+                user_table.c.username.label("author_username"),
+                user_table.c.image.label("author_image"),
+            )
+            .select_from(
+                post_table.join(user_table, post_table.c.user_id == user_table.c.id)
+            )
+            .where(post_table.c.id == post_id)
+        )
+    ).fetchone()
+    return {
+        "post_id": row.post_id,
+        "uid": row.uid,
+        "message": row.message,
+        "created": row.created.isoformat(),
+        "author_id": row.author_id,
+        "author_username": row.author_username,
+        "avatar_url": image_url(row.author_id, row.author_image, "sm"),
+        "permalink": url_for(
+            "post_app.detail", uid=row.uid, slug=slugify(row.message)
+        ),
+        "images": await _post_images(conn, post_id),
+        "reason_type": reason_type,
+        "reason_username": reason_username,
+    }
+```
+
+It joins the post to its author, shapes the same dictionary the browser already knows how to render, and takes two optional reason arguments. A plain new post passes neither; a bubbled post arrives tagged with who commented.
+
+[Save the file](https://fmze.co/fftq-5.12.5).
+
+The feed itself needs to learn two things: load each post's comments, and resolve the reason attribution into a username. First the comments. Add the `comment_table` import at the top of `post/views.py`:
+
+{lang=python,line-numbers=on,starting-line-number=19}
+```
+from comment.models import comment_table
+```
+
+Then a helper that gathers everything a card shows beyond the post itself. Add it right after `build_post_payload`:
+
+{lang=python,line-numbers=on,starting-line-number=98}
+```
+async def _post_extras(conn: Any, post_id: int, user_id: int) -> Dict[str, Any]:
+    """Comments and images for a single post, from the ``user_id`` viewer's POV."""
+    comment_rows = (
+        await conn.execute(
+            select(
+                comment_table.c.id,
+                comment_table.c.comment,
+                comment_table.c.created,
+                user_table.c.username.label("author_username"),
+            )
+            .select_from(
+                comment_table.join(user_table, comment_table.c.user_id == user_table.c.id)
+            )
+            .where(comment_table.c.post_id == post_id)
+            .order_by(comment_table.c.created.asc())
+        )
+    ).fetchall()
+
+    return {
+        "comments": comment_rows,
+        "images": await _post_images(conn, post_id),
+    }
+```
+
+Each comment comes back joined to its author's username, oldest first, the order a conversation reads in. The viewer's `user_id` isn't used yet; it earns its keep next lesson, when what the card shows starts depending on who's looking.
+
+Now rewrite `_load_feed` so every feed row carries its reason and its comments:
+
+{lang=python,line-numbers=on,starting-line-number=122}
+```
+async def _load_feed(
+    conn: Any, user_id: int, offset: int = 0, limit: int = 10
+) -> List[Dict[str, Any]]:
+    """A page of feed rows for ``user_id``, each with its comments preloaded."""
+    # Alias the user table a second time to resolve the "reason" user (whoever
+    # bubbled the post into this feed via a comment), via an OUTER join since a
+    # directly-followed post has no reason.
+    reason_user = user_table.alias("reason_user")
+    feed_query = (
+        select(
+            feed_table.c.updated,
+            post_table.c.id.label("post_id"),
+            post_table.c.uid,
+            post_table.c.message,
+            post_table.c.created,
+            user_table.c.id.label("author_id"),
+            user_table.c.username.label("author_username"),
+            user_table.c.image.label("author_image"),
+            feed_table.c.reason_type,
+            reason_user.c.username.label("reason_username"),
+        )
+        .select_from(
+            feed_table.join(post_table, feed_table.c.post_id == post_table.c.id)
+            .join(user_table, post_table.c.user_id == user_table.c.id)
+            .outerjoin(reason_user, feed_table.c.reason_user_id == reason_user.c.id)
+        )
+        .where(feed_table.c.user_id == user_id)
+        .order_by(feed_table.c.updated.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    feed_rows = (await conn.execute(feed_query)).fetchall()
+
+    posts = []
+    for row in feed_rows:
+        extras = await _post_extras(conn, row.post_id, user_id)
+        posts.append(
+            {
+                "post_id": row.post_id,
+                "uid": row.uid,
+                "message": row.message,
+                "created": row.created,
+                "author_id": row.author_id,
+                "author_username": row.author_username,
+                "avatar_url": image_url(row.author_id, row.author_image, "sm"),
+                "permalink": url_for(
+                    "post_app.detail", uid=row.uid, slug=slugify(row.message)
+                ),
+                # Why this post is in the feed (None for a direct follow).
+                "reason_type": row.reason_type,
+                "reason_username": row.reason_username,
+                **extras,
+            }
+        )
+
+    return posts
+```
+
+Two changes carry the lesson. The `reason_user` alias joins the user table a second time, because one query now needs two different users: the post's author, and whoever caused the bubble. And it's an `outerjoin`, because most feed rows have no reason at all, and an inner join would silently drop every directly-followed post. Then each post spreads in its `_post_extras`, so the card gets its comments without the template running a single query.
+
+[Save the file](https://fmze.co/fftq-5.12.6).
+
+Two routes need small updates to match. The `feed` route now builds a form, because the comment box on every card needs a CSRF token to submit. And the permalink page should show a post's comments too, so it loads through the same machinery. Update both, and add the single-post loader they share:
+
+{lang=python,line-numbers=on,starting-line-number=182}
+```
+async def _load_single_post_by_uid(
+    conn: Any, uid: str, viewer_user_id: int
+) -> Optional[Dict[str, Any]]:
+    """Load ONE post by its permalink uid (any post, not restricted to the feed).
+
+    Returns the same dict shape as ``_load_feed``'s items so the shared card
+    partial renders it unchanged, or ``None`` if the post does not exist.
+    """
+    row = (
+        await conn.execute(
+            select(
+                post_table.c.id.label("post_id"),
+                post_table.c.uid,
+                post_table.c.message,
+                post_table.c.created,
+                user_table.c.id.label("author_id"),
+                user_table.c.username.label("author_username"),
+                user_table.c.image.label("author_image"),
+            )
+            .select_from(
+                post_table.join(user_table, post_table.c.user_id == user_table.c.id)
+            )
+            .where(post_table.c.uid == uid)
+        )
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    extras = await _post_extras(conn, row.post_id, viewer_user_id)
+    return {
+        "post_id": row.post_id,
+        "uid": row.uid,
+        "message": row.message,
+        "created": row.created,
+        "author_id": row.author_id,
+        "author_username": row.author_username,
+        "avatar_url": image_url(row.author_id, row.author_image),
+        **extras,
+    }
+```
+
+Then replace the `feed` and `detail` routes:
+
+{lang=python,line-numbers=on,starting-line-number=236}
+```
+@post_app.route("/feed")
+@login_required
+async def feed():
+    """Return one page of feed cards (for infinite scroll). Empty when exhausted."""
+    try:
+        offset = int(request.args.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    form = await PostForm.create_form()
+    engine = current_app.dbc  # type: ignore
+    async with engine.begin() as conn:
+        posts = await _load_feed(conn, session["user_id"], offset=offset, limit=10)
+
+    return await render_template("post/_feed_items.html", posts=posts, form=form)
+
+
+@post_app.route("/post/<uid>/")
+@post_app.route("/post/<uid>/<slug>")
+@login_required
+async def detail(uid: str, slug: Optional[str] = None):
+    """SEO permalink page for a single post: /post/<uid>/<slug>.
+
+    The post is looked up by its opaque ``uid``; the ``slug`` is cosmetic. If
+    the slug in the URL is missing or stale, redirect to the canonical URL so
+    every post has one address search engines can index.
+    """
+    form = await PostForm.create_form()
+    engine = current_app.dbc  # type: ignore
+    async with engine.begin() as conn:
+        post = await _load_single_post_by_uid(conn, uid, session["user_id"])
+
+    if post is None:
+        abort(404)
+
+    canonical_slug = slugify(post["message"])
+    if slug != canonical_slug:
+        return redirect(
+            url_for("post_app.detail", uid=uid, slug=canonical_slug), code=301
+        )
+
+    return await render_template("post/detail.html", post=post, form=form)
+```
+
+The old `detail` route built its little dictionary by hand and knew nothing about comments. Now it loads through `_load_single_post_by_uid`, gets the exact shape the card partial expects, and passes the form so the comment box works on permalink pages too.
+
+[Save the file](https://fmze.co/fftq-5.12.7).
+
+Now the comment view ties it all together. Create `comment/views.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -3359,9 +3670,11 @@ from comment.forms import CommentForm
 from comment.models import comment_table
 from post.feed_ops import bubble_post
 from post.models import feed_table
+from post.views import build_post_payload
 from utils.helpers import login_required
 from relationship.views import followers
 from utils.sse import ServerSentEvent, broker
+from user.models import user_table
 
 comment_app = Blueprint("comment_app", __name__)
 
@@ -3383,14 +3696,38 @@ async def create_comment(post_id: int):
             )
             comment_id = result.inserted_primary_key[0]
 
-            # Bubble the post into my followers' feeds, tagged "<me> commented".
-            follower_ids = await followers(conn, session["user_id"])
-            recipients = set(follower_ids)
-            recipients.add(session["user_id"])
-            await bubble_post(conn, post_id, recipients, session["user_id"], "comment")
+            comment_row = (
+                await conn.execute(
+                    select(comment_table).where(comment_table.c.id == comment_id)
+                )
+            ).fetchone()
+            author = (
+                await conn.execute(
+                    select(user_table).where(user_table.c.id == session["user_id"])
+                )
+            ).fetchone()
 
-            # Everyone who now has this post in their feed should get the comment.
-            feed_owner_ids = [
+            # Bubble the post into the feeds of my followers (and mine), so a
+            # post I comment on surfaces for the people who follow me — even if
+            # they don't follow its author — tagged "<me> commented on this".
+            follower_ids = await followers(conn, session["user_id"])
+            bubble_recipients = set(follower_ids)
+            bubble_recipients.add(session["user_id"])
+            await bubble_post(
+                conn, post_id, bubble_recipients, session["user_id"], "comment"
+            )
+```
+
+We insert the comment, read it back along with its author, then bubble the post to our followers plus ourselves, tagging the reason as "comment". Thanks to the upsert, followers who already had the post just see it move up; those who didn't get it now.
+
+Now the live half, still inside the same `with` block and then just after it:
+
+{lang=python,line-numbers=on,starting-line-number=57}
+```
+            # The recipients are exactly the users who have this post in their
+            # feed (now including the just-bubbled ones), so the live comment
+            # reaches the same pages showing the post.
+            recipient_ids = [
                 r.user_id
                 for r in (
                     await conn.execute(
@@ -3401,25 +3738,172 @@ async def create_comment(post_id: int):
                 ).fetchall()
             ]
 
+            # Payload to push the post itself to my followers so it shows in
+            # their feed live (not only on refresh), tagged with the reason.
+            bubble_payload = await build_post_payload(
+                conn, post_id, "comment", author.username
+            )
+
+        # Push the post to my followers first — this creates the card live if
+        # they don't already have it — then send the comment to everyone who has
+        # the post in their feed.
+        if follower_ids:
+            await broker.publish_many(
+                follower_ids,
+                ServerSentEvent(event="post", data=json.dumps(bubble_payload)),
+            )
+
         payload = {
             "post_id": post_id,
             "comment_id": comment_id,
-            "comment": form.comment.data,
-            "author_username": session["username"],
+            "comment": comment_row.comment,
+            "created": comment_row.created.isoformat(),
+            "author_username": author.username,
         }
         await broker.publish_many(
-            feed_owner_ids,
-            ServerSentEvent(event="comment", data=json.dumps(payload)),
+            recipient_ids, ServerSentEvent(event="comment", data=json.dumps(payload))
         )
 
     return redirect(url_for("post_app.home"))
 ```
 
-We insert the comment, then bubble the post to our followers plus ourselves, tagging the reason as "comment". Thanks to the upsert, followers who already had the post just see it move up; those who didn't get it now.
+The ordering here is the whole design. First we push the post itself, with its attribution, to our followers: for anyone who didn't have the card, it appears live, already tagged. Then we push the comment to everyone whose feed holds this post, which by now includes the people we just bubbled it to. Two events, and every open browser converges on the same picture the database has.
 
-Then we ask the feed table who currently has this post, which now includes the freshly bubbled followers, and publish the `comment` event live to exactly those people. So the comment appears in real time on every feed showing that post, and nowhere else.
+[Save the file](https://fmze.co/fftq-5.12.8).
 
-[Save the file](https://fmze.co/fftq-5.12.4). Register the `comment_app` blueprint, import the comment model in `migrations/env.py`, and add a `comment` event listener to `broadcast.js` that finds the post card by its id and appends the comment text. Restart, and now a comment from someone you follow makes their friend's post pop into your feed, tagged with who commented, live.
+The blueprint exists but the app doesn't know it yet. Register it in `application.py`, next to the others:
+
+{lang=python,line-numbers=on,starting-line-number=14}
+```
+    from user.views import user_app
+    from relationship.views import relationship_app
+    from post.views import post_app
+    from comment.views import comment_app
+
+    app.register_blueprint(user_app)
+    app.register_blueprint(relationship_app)
+    app.register_blueprint(post_app)
+    app.register_blueprint(comment_app)
+```
+
+[Save the file](https://fmze.co/fftq-5.12.9).
+
+Now let's show all of it. The post card gets three additions: the attribution line when a post bubbled in, the list of comments, and a small form to add one. Replace `templates/post/_post_card.html`:
+
+{lang=html,line-numbers=on}
+```
+{% macro comment_row(c) %}
+<div class="comment small"><span class="comment-bubble">💬</span>
+    {{ c.comment | linkify }}
+    - <a href="{{ url_for('user_app.profile', username=c.author_username) }}" class="comment-author">@{{ c.author_username }}</a></div>
+{% endmacro %}
+
+<div class="card mb-3" data-post-id="{{ post.post_id }}">
+    <div class="card-body">
+        <div class="d-flex">
+            <img src="{{ post.avatar_url }}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40"
+                alt="avatar">
+            <div class="flex-grow-1">
+                <a href="{{ url_for('user_app.profile', username=post.author_username) }}"
+                    class="fw-bold">@{{ post.author_username }}</a>
+                {% if post.reason_type == 'comment' and post.reason_username %}
+                <span class="text-muted small ms-1">(<a href="{{ url_for('user_app.profile', username=post.reason_username) }}">{{ post.reason_username }}</a> commented on this)</span>
+                {% endif %}
+                <p class="mb-1">{{ post.message | linkify }}</p>
+                {% if post.images %}
+                <div class="d-flex gap-2 mb-2">
+                    {% for img in post.images %}
+                    <img src="{{ img.url }}" alt="post image"
+                        style="height: 200px; width: auto; border-radius: 6px;">
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if post.permalink %}
+                <a href="{{ post.permalink }}" class="small text-muted">
+                    {{ post.created.strftime('%b %d, %Y %H:%M') }}
+                </a>
+                {% else %}
+                <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
+                {% endif %}
+                <div class="comments mt-2">
+                    {% for c in post.comments %}{{ comment_row(c) }}{% endfor %}
+                </div>
+                <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="comment-form mt-2 d-flex">
+                    {{ form.csrf_token }}
+                    <input type="text" name="comment" class="form-control form-control-sm me-2" placeholder="Add a comment...">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Send</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+```
+
+The `comment_row` macro keeps each comment's markup in one place, because the card renders it and, in a moment, our JavaScript will build the same shape. The attribution span only appears when the row has a reason, so directly-followed posts look exactly as they always did.
+
+[Save the file](https://fmze.co/fftq-5.12.10).
+
+Finally, the browser side. `broadcast.js` needs to learn three things: the cards it builds live need the same comment form, a bubbled post's card should carry its attribution, and a `comment` event should append to the right card. First, grab a CSRF token near the top, right after the `EventSource` line, by borrowing the one already rendered on the page:
+
+{lang=js,line-numbers=on,starting-line-number=6}
+```
+  // Reuse the CSRF token already rendered on the page (from the post form)
+  // so dynamically-created comment forms for posts that arrived over
+  // SSE still submit successfully.
+  const csrfInput = document.querySelector('#post-form input[name="csrf_token"]');
+  const csrfToken = csrfInput ? csrfInput.value : "";
+```
+
+For that selector to find anything, the post form needs the id. In `templates/post/home.html`, add `id="post-form"` to the post form tag:
+
+{lang=html,line-numbers=off}
+```
+<form method="POST" action="{{ url_for('post_app.create_post') }}" id="post-form" enctype="multipart/form-data">
+```
+
+Back in `broadcast.js`, update the card template inside the `post` listener: the attribution span after the author link, and the comments container plus the form after the timestamp line:
+
+{lang=js,line-numbers=on,starting-line-number=31}
+```
+            <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold">@${escapeHtml(post.author_username)}</a>
+            ${(post.reason_type === "comment" && post.reason_username)
+              ? ` <span class="text-muted small ms-1">(<a href="/user/${encodeURIComponent(post.reason_username)}">${escapeHtml(post.reason_username)}</a> commented on this)</span>`
+              : ""}
+            <p class="mb-1">${escapeHtml(post.message)}</p>
+            ${(post.images && post.images.length)
+              ? `<div class="d-flex gap-2 mb-2">${post.images
+                  .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
+                  .join("")}</div>`
+              : ""}
+            <a href="${post.permalink}" class="small text-muted">${formatWhen(post.created)}</a>
+            <div class="comments mt-2"></div>
+            <form method="POST" action="/comment/${post.post_id}" class="comment-form mt-2 d-flex">
+              <input type="hidden" name="csrf_token" value="${csrfToken}">
+              <input type="text" name="comment" class="form-control form-control-sm me-2" placeholder="Add a comment...">
+              <button type="submit" class="btn btn-sm btn-outline-secondary">Send</button>
+            </form>
+```
+
+And add the `comment` listener after the `post` one: find the card by its post id, and append the comment in the same shape the template macro renders:
+
+{lang=js,line-numbers=on,starting-line-number=56}
+```
+  es.addEventListener("comment", (e) => {
+    const comment = JSON.parse(e.data);
+    const card = feed.querySelector(`[data-post-id="${comment.post_id}"]`);
+    if (!card) return;
+
+    const commentsDiv = card.querySelector(".comments");
+    const commentEl = document.createElement("div");
+    commentEl.className = "comment small";
+    commentEl.innerHTML = `<span class="comment-bubble">💬</span> ${escapeHtml(comment.comment)} - <a href="/user/${encodeURIComponent(comment.author_username)}" class="comment-author">@${escapeHtml(comment.author_username)}</a>`;
+    commentsDiv.appendChild(commentEl);
+  });
+```
+
+Restart, open two browsers, and comment from one. The comment appears under the post on every feed showing it, and if your follower didn't have the post at all, the whole card slides in first, tagged with who commented, live.
+
+[Save the file](https://fmze.co/fftq-5.12.11).
 
 ### Testing comments and bubbling
 
@@ -3436,7 +3920,7 @@ from post.models import post_table, feed_table  # noqa: F401
 from comment.models import comment_table  # noqa: F401
 ```
 
-[Save the file](https://fmze.co/fftq-5.12.5).
+[Save the file](https://fmze.co/fftq-5.12.12).
 
 Now start with the basics in `tests/test_comment.py`.
 
@@ -3503,7 +3987,7 @@ async def test_comment_requires_login(create_test_client):
 
 The `_make_post` helper posts a message and reads back its id, which we need because every comment targets a specific post. The first test confirms a comment lands in the `comment` table with the right text; the second proves an empty comment is rejected by the form validator so we never store blank rows; and the third keeps the route behind a login. Notice how much these read like the tests we've already written, because our fixtures and helpers do the heavy lifting.
 
-[Save the file](https://fmze.co/fftq-5.12.6).
+[Save the file](https://fmze.co/fftq-5.12.13).
 
 Now the interesting part. Bubbling means a post can reach your feed through someone you follow commenting on it. To test that we need three people: an author nobody follows, a commenter, and a viewer who follows only the commenter. Create `tests/test_feed.py`.
 
@@ -3639,7 +4123,7 @@ async def test_bubble_dedups_against_direct_follow(create_test_app):
 
 The first test tells the whole bubbling story. The viewer follows the commenter but not the author, so when the author posts, the viewer's feed is empty, and we assert exactly that. Then the commenter comments, and now the post appears in the viewer's feed with a `reason_type` of "comment" and a `reason_user_id` pointing at the commenter. We even run it through `_load_feed` to confirm the attribution resolves to the friendly "commenter commented on this" form the template will show. The second test proves the flip side: a stranger who follows neither the author nor the commenter gets nothing, so a comment only bubbles to the commenter's own followers. And the third test guards a nasty edge: if you already follow the author directly, a later comment must not create a second copy of the post in your feed. We assert the row count stays at one and that the original direct-follow row keeps its empty reason, so a real follow always wins over a bubble.
 
-[Save the file](https://fmze.co/fftq-5.12.7).
+[Save the file](https://fmze.co/fftq-5.12.14).
 
 Bubbling isn't only about the database; it also pushes live. When someone you follow comments on a post you've never seen, that post should slide into your open feed over SSE without a refresh. Add this test to `test_feed.py`. It uses the broker directly to capture what a viewer's live connection would receive.
 
@@ -3681,7 +4165,7 @@ async def test_comment_live_bubbles_post_over_sse(create_test_app):
 
 Here we subscribe to the broker as the viewer, exactly like a real browser opening its `EventSource` connection, then have the commenter comment. We drain the queue and look for a "post" event, because the whole point is that the post itself arrives live so the card can appear on the viewer's page. We check its payload carries the post id and the "commenter commented on this" attribution. The `try/finally` matters: we always unsubscribe so a leftover queue can't bleed into another test. Run `pytest` and watch comments, bubbling, and the live push all pass.
 
-[Save the file](https://fmze.co/fftq-5.12.8).
+[Save the file](https://fmze.co/fftq-5.12.15).
 
 ## Likes and Live Reactions <!-- 5.13 -->
 

@@ -3286,13 +3286,21 @@ One required text field with a sane length cap, exactly like our post form.
 
 [Save the file](https://fmze.co/fftq-5.12.1.1).
 
-Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why, with the card saying who commented on it. So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, adding three lines at the bottom of the table, right above its closing parenthesis:
+Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why, with the card saying who commented on it. So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, adding three lines at the bottom of the table, right above its closing parenthesis — the highlighted lines are the new ones:
 
-{lang=python,line-numbers=on,starting-line-number=33}
+{lang=python,line-numbers=on,starting-line-number=26,highlight=33-35}
 ```
+feed_table = Table(
+    "feed",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, ForeignKey("user.id"), nullable=False),
+    Column("post_id", Integer, ForeignKey("post.id"), nullable=False),
+    Column("updated", DateTime(timezone=True), server_default=func.now()),
     Column("reason_user_id", Integer, ForeignKey("user.id"), nullable=True),
     Column("reason_type", String(16), nullable=True),  # e.g. "comment"
     UniqueConstraint("user_id", "post_id", name="uq_feed_user_post"),
+)
 ```
 
 We add `reason_user_id`, who caused the post to bubble, and `reason_type`, what they did, like "comment". Both are nullable, because a post that's in your feed from a plain follow has no special reason.
@@ -3324,9 +3332,9 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "comment
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Open `post/feed_ops.py`. Three things happen here: `add_to_feed` learns the two reason columns and becomes an upsert, a new `bubble_post` joins at the bottom, and `fan_out_post` stays exactly as it is:
+Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Open `post/feed_ops.py`. Three things happen here, and they're the highlighted regions: the imports change, `add_to_feed` learns the two reason columns and becomes an upsert, and a new `bubble_post` joins at the bottom. `fan_out_post` stays exactly as it is:
 
-{lang=python,line-numbers=on}
+{lang=python,line-numbers=on,highlight=1;3-4;9-27;36-45}
 ```
 from typing import Iterable, Optional
 

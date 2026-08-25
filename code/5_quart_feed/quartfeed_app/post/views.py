@@ -16,6 +16,7 @@ from quart import (
 )
 from sqlalchemy import insert, select
 
+from comment.models import comment_table
 from post.feed_ops import fan_out_post
 from post.forms import PostForm
 from post.models import feed_table, post_image_table, post_table
@@ -94,12 +95,41 @@ async def build_post_payload(
     }
 
 
+async def _post_extras(conn: Any, post_id: int, user_id: int) -> Dict[str, Any]:
+    """Comments and images for a single post, from the ``user_id`` viewer's POV."""
+    comment_rows = (
+        await conn.execute(
+            select(
+                comment_table.c.id,
+                comment_table.c.comment,
+                comment_table.c.created,
+                user_table.c.username.label("author_username"),
+            )
+            .select_from(
+                comment_table.join(user_table, comment_table.c.user_id == user_table.c.id)
+            )
+            .where(comment_table.c.post_id == post_id)
+            .order_by(comment_table.c.created.asc())
+        )
+    ).fetchall()
+
+    return {
+        "comments": comment_rows,
+        "images": await _post_images(conn, post_id),
+    }
+
+
 async def _load_feed(
     conn: Any, user_id: int, offset: int = 0, limit: int = 10
 ) -> List[Dict[str, Any]]:
-    """One page of a user's feed, newest activity first."""
+    """A page of feed rows for ``user_id``, each with its comments preloaded."""
+    # Alias the user table a second time to resolve the "reason" user (whoever
+    # bubbled the post into this feed via a comment), via an OUTER join since a
+    # directly-followed post has no reason.
+    reason_user = user_table.alias("reason_user")
     feed_query = (
         select(
+            feed_table.c.updated,
             post_table.c.id.label("post_id"),
             post_table.c.uid,
             post_table.c.message,
@@ -107,31 +137,37 @@ async def _load_feed(
             user_table.c.id.label("author_id"),
             user_table.c.username.label("author_username"),
             user_table.c.image.label("author_image"),
+            feed_table.c.reason_type,
+            reason_user.c.username.label("reason_username"),
         )
         .select_from(
             feed_table.join(post_table, feed_table.c.post_id == post_table.c.id)
             .join(user_table, post_table.c.user_id == user_table.c.id)
+            .outerjoin(reason_user, feed_table.c.reason_user_id == reason_user.c.id)
         )
         .where(feed_table.c.user_id == user_id)
         .order_by(feed_table.c.updated.desc())
         .limit(limit)
         .offset(offset)
     )
-    rows = (await conn.execute(feed_query)).fetchall()
+    feed_rows = (await conn.execute(feed_query)).fetchall()
 
     posts = []
-    for row in rows:
+    for row in feed_rows:
+        extras = await _post_extras(conn, row.post_id, user_id)
         posts.append(
             {
                 "post_id": row.post_id,
+                "uid": row.uid,
                 "message": row.message,
                 "created": row.created,
+                "author_id": row.author_id,
                 "author_username": row.author_username,
                 "avatar_url": image_url(row.author_id, row.author_image, "sm"),
-                "images": await _post_images(conn, row.post_id),
-                "permalink": url_for(
-                    "post_app.detail", uid=row.uid, slug=slugify(row.message)
-                ),
+                # Why this post is in the feed (None for a direct follow).
+                "reason_type": row.reason_type,
+                "reason_username": row.reason_username,
+                **extras,
             }
         )
 

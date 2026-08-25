@@ -3288,7 +3288,7 @@ One required text field with a sane length cap, exactly like our post form.
 
 Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why, with the card saying who commented on it. So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, adding three lines at the bottom of the table, right above its closing parenthesis — the highlighted lines are the new ones:
 
-{lang=python,line-numbers=on,starting-line-number=26,highlight=33-35}
+{lang=python,line-numbers=on,starting-line-number=26}
 ```
 feed_table = Table(
     "feed",
@@ -3297,9 +3297,11 @@ feed_table = Table(
     Column("user_id", Integer, ForeignKey("user.id"), nullable=False),
     Column("post_id", Integer, ForeignKey("post.id"), nullable=False),
     Column("updated", DateTime(timezone=True), server_default=func.now()),
+# markua-start-insert
     Column("reason_user_id", Integer, ForeignKey("user.id"), nullable=True),
     Column("reason_type", String(16), nullable=True),  # e.g. "comment"
     UniqueConstraint("user_id", "post_id", name="uq_feed_user_post"),
+# markua-end-insert
 )
 ```
 
@@ -3334,16 +3336,24 @@ $ docker compose run --rm web uv run alembic upgrade head
 
 Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Open `post/feed_ops.py`. Three things happen here, and they're the highlighted regions: the imports change, `add_to_feed` learns the two reason columns and becomes an upsert, and a new `bubble_post` joins at the bottom. `fan_out_post` stays exactly as it is:
 
-{lang=python,line-numbers=on,highlight=1;3-4;9-27;36-45}
+{lang=python,line-numbers=on}
 ```
+# markua-start-delete
+from typing import Iterable
+
+from sqlalchemy import insert
+# markua-end-delete
+# markua-start-insert
 from typing import Iterable, Optional
 
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+# markua-end-insert
 
 from post.models import feed_table
 
 
+# markua-start-insert
 async def add_to_feed(
     conn,
     user_id: int,
@@ -3363,6 +3373,7 @@ async def add_to_feed(
         set_={"updated": func.now()},
     )
     await conn.execute(stmt)
+# markua-end-insert
 
 
 async def fan_out_post(conn, post_id: int, recipient_ids: Iterable[int]) -> None:
@@ -3371,6 +3382,7 @@ async def fan_out_post(conn, post_id: int, recipient_ids: Iterable[int]) -> None
         await add_to_feed(conn, user_id, post_id)
 
 
+# markua-start-insert
 async def bubble_post(
     conn,
     post_id: int,
@@ -3381,6 +3393,7 @@ async def bubble_post(
     """Surface an existing post into more feeds because someone engaged with it."""
     for user_id in set(recipient_ids):
         await add_to_feed(conn, user_id, post_id, reason_user_id, reason_type)
+# markua-end-insert
 ```
 
 We switch to Postgres's own `insert` so we can chain `on_conflict_do_update`. Now if a feed row for this user and post already exists, instead of failing on the unique constraint, we bump its `updated` timestamp, which floats the post back to the top. That's exactly what we want: fresh activity, no duplicates.

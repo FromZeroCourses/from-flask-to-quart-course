@@ -3336,6 +3336,8 @@ $ docker compose run --rm web uv run alembic upgrade head
 
 Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Open `post/feed_ops.py`. Three things happen here, and they're the highlighted regions: the imports change, `add_to_feed` learns the two reason columns and becomes an upsert, and a new `bubble_post` joins at the bottom. `fan_out_post` stays exactly as it is:
 
+![One insert, two outcomes: a brand new feed row, or an on conflict update that bumps the timestamp and floats the post back to the top.](images/5.12-scene6-img1.png)
+
 {lang=python,line-numbers=on}
 ```
 # markua-start-delete

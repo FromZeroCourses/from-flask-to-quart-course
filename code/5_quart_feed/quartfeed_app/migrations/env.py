@@ -16,6 +16,7 @@ from db import metadata
 from user.models import user_table  # noqa: F401
 from relationship.models import relationship_table  # noqa: F401
 from post.models import post_table, post_image_table  # noqa: F401
+from comment.models import comment_table  # noqa: F401
 config.set_main_option(
     "sqlalchemy.url",
     f"postgresql+asyncpg://{os.environ['DB_USERNAME']}:{os.environ['DB_PASSWORD']}"

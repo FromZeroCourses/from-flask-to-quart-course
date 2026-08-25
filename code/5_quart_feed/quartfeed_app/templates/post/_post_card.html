@@ -1,3 +1,9 @@
+{% macro comment_row(c) %}
+<div class="comment small"><span class="comment-bubble">💬</span>
+    {{ c.comment | linkify }}
+    - <a href="{{ url_for('user_app.profile', username=c.author_username) }}" class="comment-author">@{{ c.author_username }}</a></div>
+{% endmacro %}
+
 <div class="card mb-3" data-post-id="{{ post.post_id }}">
     <div class="card-body">
         <div class="d-flex">
@@ -6,6 +12,9 @@
             <div class="flex-grow-1">
                 <a href="{{ url_for('user_app.profile', username=post.author_username) }}"
                     class="fw-bold">@{{ post.author_username }}</a>
+                {% if post.reason_type == 'comment' and post.reason_username %}
+                <span class="text-muted small ms-1">(<a href="{{ url_for('user_app.profile', username=post.reason_username) }}">{{ post.reason_username }}</a> commented on this)</span>
+                {% endif %}
                 <p class="mb-1">{{ post.message | linkify }}</p>
                 {% if post.images %}
                 <div class="d-flex gap-2 mb-2">
@@ -15,13 +24,17 @@
                     {% endfor %}
                 </div>
                 {% endif %}
-                {% if post.permalink %}
-                <a href="{{ post.permalink }}" class="small text-muted">
+                <a href="{{ post_url(post.uid, post.message) }}" class="small text-muted">
                     {{ post.created.strftime('%b %d, %Y %H:%M') }}
                 </a>
-                {% else %}
-                <span class="small text-muted">{{ post.created.strftime('%b %d, %Y %H:%M') }}</span>
-                {% endif %}
+                <div class="comments mt-2">
+                    {% for c in post.comments %}{{ comment_row(c) }}{% endfor %}
+                </div>
+                <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="comment-form mt-2 d-flex">
+                    {{ form.csrf_token }}
+                    <input type="text" name="comment" class="form-control form-control-sm me-2" placeholder="Add a comment...">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Send</button>
+                </form>
             </div>
         </div>
     </div>

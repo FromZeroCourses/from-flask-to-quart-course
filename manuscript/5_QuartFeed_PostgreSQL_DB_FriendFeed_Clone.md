@@ -3284,6 +3284,8 @@ One required text field with a sane length cap, exactly like our post form.
 
 Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why: "Robert Scoble commented on this". So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, and give the table a comment header that captures the two routes into a feed, because six months from now this table is the one you'll have to re-derive in your head:
 
+![A post whose author you do not follow reaches your feed because someone you do follow commented on it: that is bubbling.](images/5.12-scene8-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=26}
 ```
 # Fan-out table: when a user posts, one feed row is inserted for every

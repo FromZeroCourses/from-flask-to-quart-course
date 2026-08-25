@@ -1,18 +1,3 @@
-"""Feed fan-out helpers.
-
-The ``feed`` table is the materialized per-user timeline. Two things put a post
-in your feed:
-
-1. Fan-out — when someone you follow (or you) posts, the post lands directly in
-   your feed (no attribution).
-2. Bubbling — when someone you follow comments on a post, that post surfaces in
-   your feed even if you don't follow the author, tagged with the reason
-   ("<name> commented on this").
-
-UNIQUE(user_id, post_id) guarantees a post appears at most once per feed, so a
-post you'd get from both routes is de-duplicated. On a conflict we bump
-``updated`` so fresh activity floats the post back to the top.
-"""
 from typing import Iterable, Optional
 
 from sqlalchemy import func
@@ -43,7 +28,7 @@ async def add_to_feed(
 
 
 async def fan_out_post(conn, post_id: int, recipient_ids: Iterable[int]) -> None:
-    """A brand-new post lands directly in the author's + followers' feeds."""
+    """A brand-new post lands directly in the author's and followers' feeds."""
     for user_id in set(recipient_ids):
         await add_to_feed(conn, user_id, post_id)
 

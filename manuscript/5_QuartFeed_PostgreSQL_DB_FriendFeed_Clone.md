@@ -3262,7 +3262,11 @@ comment_table = Table(
 )
 ```
 
-Nothing surprising: a comment belongs to a post and an author, holds some text, and stamps its own creation time. The form is just as small. Create `comment/forms.py`:
+Nothing surprising: a comment belongs to a post and an author, holds some text, and stamps its own creation time.
+
+[Save the file](https://fmze.co/fftq-5.12.1).
+
+The form is just as small. Create `comment/forms.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -3280,7 +3284,7 @@ class CommentForm(QuartForm):
 
 One required text field with a sane length cap, exactly like our post form.
 
-[Save the file](https://fmze.co/fftq-5.12.1).
+[Save the file](https://fmze.co/fftq-5.12.1.1).
 
 Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why: "Robert Scoble commented on this". So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, and give the table a comment header that captures the two routes into a feed, because six months from now this table is the one you'll have to re-derive in your head:
 
@@ -3913,11 +3917,13 @@ And add the `comment` listener after the `post` one: find the card by its post i
   });
 ```
 
+[Save the file](https://fmze.co/fftq-5.12.11).
+
 Restart, open two browsers, and comment from one. The comment appears under the post on every feed showing it, and if your follower didn't have the post at all, the whole card slides in first, tagged with who commented, live.
 
 [Save the file](https://fmze.co/fftq-5.12.11).
 
-### Testing comments and bubbling
+### Testing comments and bubbling <!--  -->
 
 Comments do more than attach text to a post; commenting bubbles that post into the feeds of the people who follow you, even if they don't follow the original author. That bubbling is subtle logic, so it's worth testing carefully. Two quick tests cover the basics, then two more prove the bubbling actually works.
 
@@ -4312,7 +4318,7 @@ If nobody liked it, we show nothing. Up to five names, we list them all with a n
 
 [Save the file](https://fmze.co/fftq-5.13.3). Restart and try it. Like a post and the line updates; like it from another account and watch the names change live on the first. Unlike and it ticks back down. QuartFeed is now a complete, real-time social feed. All that's left is to make sure it stays that way.
 
-### Testing likes
+### Testing likes <!-- 5.13.1 -->
 
 A like is a toggle: click once to like, click again to remove it. That toggle plus the little "who liked this" line under a post are the two things worth testing here.
 
@@ -4725,7 +4731,7 @@ async def test_follow_lists_empty(create_test_app):
 
 Two small gaps remain on the profile-editing page, and both are the kind of thing users notice: you can upload an avatar but not remove it, and you can rename yourself to a name someone else already has. Let's close both, testing each as we go.
 
-### Removing an avatar
+### Removing an avatar <!-- 5.16.1 -->
 
 If you can upload a profile picture, you should be able to take it back down. Add a `delete_image` route to `user/views.py`. It clears the avatar files from disk and resets the `image` column to `None`. We support a background request from the edit page, so it answers a `204` to an XHR call and otherwise redirects.
 
@@ -4856,7 +4862,7 @@ We post to the route without the XHR header, so we exercise the plain-redirect p
 
 [Save the file](https://fmze.co/fftq-5.16.3).
 
-### Guarding against duplicate usernames
+### Guarding against duplicate usernames <!-- 5.16.2 -->
 
 The other gap: on the edit page a user can rename themselves, but nothing stops them from picking a name someone else already has, which would collide at the database level. Add a check inside `profile_edit` in `user/views.py`, right where we handle the rename.
 

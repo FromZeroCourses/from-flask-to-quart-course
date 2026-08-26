@@ -123,9 +123,6 @@ async def _load_feed(
     conn: Any, user_id: int, offset: int = 0, limit: int = 10
 ) -> List[Dict[str, Any]]:
     """A page of feed rows for ``user_id``, each with its comments preloaded."""
-    # Alias the user table a second time to resolve the "reason" user (whoever
-    # bubbled the post into this feed via a comment), via an OUTER join since a
-    # directly-followed post has no reason.
     reason_user = user_table.alias("reason_user")
     feed_query = (
         select(

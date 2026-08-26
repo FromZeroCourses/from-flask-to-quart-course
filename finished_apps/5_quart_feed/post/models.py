@@ -35,10 +35,7 @@ feed_table = Table(
     UniqueConstraint("user_id", "post_id", name="uq_feed_user_post"),
 )
 
-# Images attached to a post. One per post in the UI for now, but the table is
-# multi-image ready: several rows (ordered by ``position``) render side-by-side
-# at a uniform height. ``image_id`` is a timestamp; ``width`` is the scaled
-# width so the layout can reserve space. File: posts/{post_id}.{image_id}.xlg.png
+# Images for a post, ordered by ``position``: posts/{post_id}.{image_id}.xlg.png
 post_image_table = Table(
     "post_image",
     metadata,

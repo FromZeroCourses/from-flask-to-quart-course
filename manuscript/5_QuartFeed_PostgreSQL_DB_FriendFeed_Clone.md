@@ -4119,6 +4119,8 @@ The first test tells the whole bubbling story. The viewer follows the commenter 
 
 Bubbling isn't only about the database; it also pushes live. When someone you follow comments on a post you've never seen, that post should slide into your open feed over SSE without a refresh. Add this test to `test_feed.py`. It uses the broker directly to capture what a viewer's live connection would receive.
 
+![A comment on a post you have never seen publishes a live post event through the broker, so the card slides into your open feed with no refresh.](images/5.12-scene19-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=129}
 ```
 @pytest.mark.asyncio

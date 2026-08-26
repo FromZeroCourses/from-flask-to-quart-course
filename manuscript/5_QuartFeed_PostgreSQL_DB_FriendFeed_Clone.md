@@ -3835,6 +3835,8 @@ The `comment_row` macro keeps each comment's markup in one place, because the ca
 
 Finally, the browser side. `broadcast.js` needs to learn three things: the cards it builds live need the same comment form, a bubbled post's card should carry its attribution, and a `comment` event should append to the right card. First, grab a CSRF token near the top, right after the `EventSource` line, by borrowing the one already rendered on the page:
 
+![broadcast.js has three things to learn: live cards need the same comment form, a bubbled post's card carries its attribution, and a comment event appends to the right card.](images/5.12-scene13-img1.png)
+
 {lang=js,line-numbers=on,starting-line-number=7}
 ```
   // Reuse the page's rendered CSRF token so SSE-built comment forms can submit.

@@ -3899,7 +3899,7 @@ Restart, open two browsers, and comment from one. The comment appears under the 
 
 ### Testing comments and bubbling <!--  -->
 
-Comments do more than attach text to a post; commenting bubbles that post into the feeds of the people who follow you, even if they don't follow the original author. That bubbling is subtle logic, so it's worth testing carefully. Two quick tests cover the basics, then two more prove the bubbling actually works.
+Comments do more than attach text to a post. Commenting bubbles that post into the feeds of the people who follow you, even if they don't follow the original author. That bubbling is subtle logic, so it's worth testing carefully. Three quick tests cover the basics, then four more prove the bubbling actually works.
 
 First, the now-familiar one-line update to `conftest.py`: we just added the `comment` table, so register its model so the test database builds it.
 

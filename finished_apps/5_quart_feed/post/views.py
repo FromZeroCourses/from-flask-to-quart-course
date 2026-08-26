@@ -304,14 +304,12 @@ async def create_post():
             )
             post_id = result.inserted_primary_key[0]
 
-            # Fan out: a feed row for every follower of me, and one for
-            # myself so my own posts show up in my own feed too.
+            # Fan out a feed row to every follower of mine, plus myself.
             recipient_ids = set(await followers(conn, session["user_id"]))
             recipient_ids.add(session["user_id"])
             await fan_out_post(conn, post_id, recipient_ids)
 
-            # Optional single image: scale to a fixed height (side-by-side ready)
-            # and record it. One per post in the UI; the table supports more.
+            # Optional image, scaled to a fixed height; one per post, table takes more.
             images: List[Dict[str, Any]] = []
             if form.image.data:
                 image_id, width = image_height_transform(

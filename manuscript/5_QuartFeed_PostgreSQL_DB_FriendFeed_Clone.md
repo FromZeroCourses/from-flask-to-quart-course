@@ -3498,9 +3498,6 @@ async def _load_feed(
     conn: Any, user_id: int, offset: int = 0, limit: int = 10
 ) -> List[Dict[str, Any]]:
     """A page of feed rows for ``user_id``, each with its comments preloaded."""
-    # Alias the user table a second time to resolve the "reason" user (whoever
-    # bubbled the post into this feed via a comment), via an OUTER join since a
-    # directly-followed post has no reason.
     reason_user = user_table.alias("reason_user")
     feed_query = (
         select(
@@ -3557,16 +3554,12 @@ One thing quietly disappeared: the permalink. `url_for` only works inside a requ
 
 Two routes need small updates to match. The `feed` route now builds a form, because the comment box on every card needs a CSRF token to submit. And the permalink page should show a post's comments too, so it loads through the same machinery. Update both, and add the single-post loader they share:
 
-{lang=python,line-numbers=on,starting-line-number=177}
+{lang=python,line-numbers=on,starting-line-number=174}
 ```
 async def _load_single_post_by_uid(
     conn: Any, uid: str, viewer_user_id: int
 ) -> Optional[Dict[str, Any]]:
-    """Load ONE post by its permalink uid (any post, not restricted to the feed).
-
-    Returns the same dict shape as ``_load_feed``'s items so the shared card
-    partial renders it unchanged, or ``None`` if the post does not exist.
-    """
+    """Load one post by permalink uid, in the same dict shape as ``_load_feed``'s."""
     row = (
         await conn.execute(
             select(
@@ -3603,7 +3596,7 @@ async def _load_single_post_by_uid(
 
 Then replace the `feed` and `detail` routes:
 
-{lang=python,line-numbers=on,starting-line-number=232}
+{lang=python,line-numbers=on,starting-line-number=225}
 ```
 @post_app.route("/feed")
 @login_required
@@ -3626,12 +3619,7 @@ async def feed():
 @post_app.route("/post/<uid>/<slug>")
 @login_required
 async def detail(uid: str, slug: Optional[str] = None):
-    """SEO permalink page for a single post: /post/<uid>/<slug>.
-
-    The post is looked up by its opaque ``uid``; the ``slug`` is cosmetic. If
-    the slug in the URL is missing or stale, redirect to the canonical URL so
-    every post has one address search engines can index.
-    """
+    """SEO permalink page; a missing or stale slug 301-redirects to the canonical URL."""
     form = await PostForm.create_form()
     engine = current_app.dbc  # type: ignore
     async with engine.begin() as conn:
@@ -3703,9 +3691,7 @@ async def create_comment(post_id: int):
                 )
             ).fetchone()
 
-            # Bubble the post into the feeds of my followers (and mine), so a
-            # post I comment on surfaces for the people who follow me — even if
-            # they don't follow its author — tagged "<me> commented on this".
+            # Bubble into my followers' feeds (and mine): "<me> commented on this".
             follower_ids = await followers(conn, session["user_id"])
             bubble_recipients = set(follower_ids)
             bubble_recipients.add(session["user_id"])
@@ -3718,11 +3704,9 @@ We insert the comment, read it back along with its author, then bubble the post 
 
 Now the live half, still inside the same `with` block and then just after it:
 
-{lang=python,line-numbers=on,starting-line-number=57}
+{lang=python,line-numbers=on,starting-line-number=55}
 ```
-            # The recipients are exactly the users who have this post in their
-            # feed (now including the just-bubbled ones), so the live comment
-            # reaches the same pages showing the post.
+            # Everyone with this post in their feed gets the live comment.
             recipient_ids = [
                 r.user_id
                 for r in (
@@ -3734,15 +3718,12 @@ Now the live half, still inside the same `with` block and then just after it:
                 ).fetchall()
             ]
 
-            # Payload to push the post itself to my followers so it shows in
-            # their feed live (not only on refresh), tagged with the reason.
+            # The bubbled post's payload, tagged with who commented and why.
             bubble_payload = await build_post_payload(
                 conn, post_id, "comment", author.username
             )
 
-        # Push the post to my followers first — this creates the card live if
-        # they don't already have it — then send the comment to everyone who has
-        # the post in their feed.
+        # Push the post to followers first, then the comment to everyone holding it.
         if follower_ids:
             await broker.publish_many(
                 follower_ids,
@@ -3856,9 +3837,7 @@ Finally, the browser side. `broadcast.js` needs to learn three things: the cards
 
 {lang=js,line-numbers=on,starting-line-number=7}
 ```
-  // Reuse the CSRF token already rendered on the page (from the post form)
-  // so dynamically-created comment forms for posts that arrived over
-  // SSE still submit successfully.
+  // Reuse the page's rendered CSRF token so SSE-built comment forms can submit.
   const csrfInput = document.querySelector('#post-form input[name="csrf_token"]');
   const csrfToken = csrfInput ? csrfInput.value : "";
 ```
@@ -3872,7 +3851,7 @@ For that selector to find anything, the post form needs the id. In `templates/po
 
 Back in `broadcast.js`, update the card template inside the `post` listener: the attribution span after the author link, and the comments container plus the form after the timestamp line:
 
-{lang=js,line-numbers=on,starting-line-number=37}
+{lang=js,line-numbers=on,starting-line-number=35}
 ```
             <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold">@${escapeHtml(post.author_username)}</a>
             ${(post.reason_type === "comment" && post.reason_username)
@@ -3895,7 +3874,7 @@ Back in `broadcast.js`, update the card template inside the `post` listener: the
 
 And add the `comment` listener after the `post` one: find the card by its post id, and append the comment in the same shape the template macro renders:
 
-{lang=js,line-numbers=on,starting-line-number=60}
+{lang=js,line-numbers=on,starting-line-number=58}
 ```
   es.addEventListener("comment", (e) => {
     const comment = JSON.parse(e.data);

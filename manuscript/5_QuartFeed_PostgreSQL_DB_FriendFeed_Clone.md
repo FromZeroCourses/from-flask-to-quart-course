@@ -3398,9 +3398,9 @@ async def bubble_post(
 # markua-end-insert
 ```
 
-We switch to Postgres's own `insert` so we can chain `on_conflict_do_update`. Now if a feed row for this user and post already exists, instead of failing on the unique constraint, we bump its `updated` timestamp, which floats the post back to the top. That's exactly what we want: fresh activity, no duplicates.
+The new `add_to_feed` does the whole job in one shape: it accepts the two optional reason arguments, and it builds the row with Postgres's own `insert` so we can chain `on_conflict_do_update`. If a feed row for this user and post already exists, instead of failing on the unique constraint we just bump its `updated` timestamp, which floats the post back to the top. Fresh activity, no duplicates.
 
-`fan_out_post` is untouched, and the new `bubble_post` is its sibling: it adds a post to feeds and records the reason it bubbled. Same machinery, one carries attribution.
+`fan_out_post` is untouched, and the new `bubble_post` is its sibling: it pushes a post into feeds the same way, and it records who caused it and why. However a post reaches a feed from now on, it lands through this one safe upsert.
 
 [Save the file](https://fmze.co/fftq-5.12.4).
 

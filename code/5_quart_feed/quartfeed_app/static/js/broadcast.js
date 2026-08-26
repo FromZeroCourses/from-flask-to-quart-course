@@ -4,9 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const es = new EventSource("/sse");
 
-  // Reuse the CSRF token already rendered on the page (from the post form)
-  // so dynamically-created comment forms for posts that arrived over
-  // SSE still submit successfully.
+  // Reuse the page's rendered CSRF token so SSE-built comment forms can submit.
   const csrfInput = document.querySelector('#post-form input[name="csrf_token"]');
   const csrfToken = csrfInput ? csrfInput.value : "";
 

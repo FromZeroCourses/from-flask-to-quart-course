@@ -123,9 +123,6 @@ async def _load_feed(
     conn: Any, user_id: int, offset: int = 0, limit: int = 10
 ) -> List[Dict[str, Any]]:
     """A page of feed rows for ``user_id``, each with its comments preloaded."""
-    # Alias the user table a second time to resolve the "reason" user (whoever
-    # bubbled the post into this feed via a comment), via an OUTER join since a
-    # directly-followed post has no reason.
     reason_user = user_table.alias("reason_user")
     feed_query = (
         select(
@@ -177,11 +174,7 @@ async def _load_feed(
 async def _load_single_post_by_uid(
     conn: Any, uid: str, viewer_user_id: int
 ) -> Optional[Dict[str, Any]]:
-    """Load ONE post by its permalink uid (any post, not restricted to the feed).
-
-    Returns the same dict shape as ``_load_feed``'s items so the shared card
-    partial renders it unchanged, or ``None`` if the post does not exist.
-    """
+    """Load one post by permalink uid, in the same dict shape as ``_load_feed``'s."""
     row = (
         await conn.execute(
             select(
@@ -250,12 +243,7 @@ async def feed():
 @post_app.route("/post/<uid>/<slug>")
 @login_required
 async def detail(uid: str, slug: Optional[str] = None):
-    """SEO permalink page for a single post: /post/<uid>/<slug>.
-
-    The post is looked up by its opaque ``uid``; the ``slug`` is cosmetic. If
-    the slug in the URL is missing or stale, redirect to the canonical URL so
-    every post has one address search engines can index.
-    """
+    """SEO permalink page; a missing or stale slug 301-redirects to the canonical URL."""
     form = await PostForm.create_form()
     engine = current_app.dbc  # type: ignore
     async with engine.begin() as conn:

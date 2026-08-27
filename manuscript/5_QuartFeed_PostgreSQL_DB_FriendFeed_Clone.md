@@ -3893,9 +3893,13 @@ And add the `comment` listener after the `post` one: find the card by its post i
 
 [Save the file](https://fmze.co/fftq-5.12.11).
 
-Restart, open two browsers, and comment from one. The comment appears under the post on every feed showing it, and if your follower didn't have the post at all, the whole card slides in first, tagged with who commented, live.
+Let's watch it work. Restart the app, open two browser windows side by side, and log in as jorge on the left and marta on the right.
 
-[Save the file](https://fmze.co/fftq-5.12.11).
+From jorge's window, type a comment on the top post and send it. Marta already has that post in her feed.
+
+The comment appears under it in her window right away, with no refresh. Now comment on a post she doesn't have at all.
+
+The whole card slides into her feed first, tagged with who commented on it, live.
 
 ### Testing comments and bubbling <!--  -->
 

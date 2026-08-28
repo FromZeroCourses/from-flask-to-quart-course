@@ -4161,7 +4161,9 @@ async def test_comment_live_bubbles_post_over_sse(create_test_app):
     assert data["reason_username"] == "commenter"
 ```
 
-Here we subscribe to the broker as the viewer, exactly like a real browser opening its `EventSource` connection, then have the commenter comment. We drain the queue and look for a "post" event, because the whole point is that the post itself arrives live so the card can appear on the viewer's page. We check its payload carries the post id and the "commenter commented on this" attribution. The `try/finally` matters: we always unsubscribe so a leftover queue can't bleed into another test. Run `pytest` and watch comments, bubbling, and the live push all pass.
+Here we subscribe to the broker as the viewer, exactly like a real browser opening its `EventSource` connection, then have the commenter comment. We drain the queue and look for a "post" event, because the whole point is that the post itself arrives live so the card can appear on the viewer's page. We check its payload carries the post id and the "commenter commented on this" attribution. The `try/finally` matters: we always unsubscribe so a leftover queue can't bleed into another test.
+
+Run `pytest` and watch comments, bubbling, and the live push all pass.
 
 [Save the file](https://fmze.co/fftq-5.12.15).
 

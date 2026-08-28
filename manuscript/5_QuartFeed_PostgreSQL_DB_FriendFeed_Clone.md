@@ -3449,7 +3449,11 @@ async def build_post_payload(
     }
 ```
 
-It joins the post to its author, shapes the same dictionary the browser already knows how to render, and takes two optional reason arguments. A plain new post passes neither; a bubbled post arrives tagged with who commented.
+The signature takes the connection and a post id, plus two optional reason arguments, and both of those default to nothing.
+
+The body joins the post to its author in a single query, so one round trip gives us the message, when it was created, and the username and avatar image of whoever wrote it. We only need the one row.
+
+Then we shape the same dictionary the browser already knows how to render, with the permalink, the avatar URL, the attached images, and the two reason fields at the end. A brand-new post leaves those empty, while a bubbled post arrives tagged with who commented.
 
 [Save the file](https://fmze.co/fftq-5.12.5).
 

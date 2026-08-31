@@ -4386,6 +4386,8 @@ A filter and a global are two ways of exposing the same kind of function to Jinj
 
 Now the line itself. FriendFeed had a nice touch: instead of a bare count it wrote out "Alice, Bob and Carol liked this", and collapsed the list once it got long. Open `utils/helpers.py`. We need two more imports, a `List` for the signature and `quote` to build safe profile URLs:
 
+![Five likers or fewer are written out in full; past that the line collapses to the first three plus an expandable link, with both spans already in the HTML.](images/5.13-scene6-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
 import os

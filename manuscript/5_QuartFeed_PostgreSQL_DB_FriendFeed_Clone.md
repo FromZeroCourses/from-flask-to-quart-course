@@ -4489,6 +4489,8 @@ The first query is the same join the view used, so the server-rendered line and 
 
 That is the like feature, end to end on the server. Now the look.
 
+![Each part of the FriendFeed look maps to one class the stylesheet targets: the wordmark, the blue column bar, the white entry card, the two type sizes, and the row of text links under every post.](images/5.13-scene8-img1.png)
+
 Everything we have built renders through Bootstrap's defaults, which is fine but generic. FriendFeed had a specific, recognizable style: a soft blue-grey page, white entries with thin borders, a blue title bar over the column, and a row of small text links under each post reading "time - Comment - Like". Almost none of that needs new markup. It needs a stylesheet. Create `static/css/friendfeed.css`, starting with the palette and the page:
 
 {lang=css,line-numbers=on}

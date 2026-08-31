@@ -4853,7 +4853,7 @@ Finally, one click handler for the whole page:
 
 One listener on `document` handles all four interactions, and that is not laziness. Cards arrive from three directions now: rendered by Jinja on load, appended by infinite scroll, and prepended by SSE. If we attached handlers to each button we would have to re-attach them every time a card appeared, and forgetting once means a dead link with no error. Listening on `document` and asking `e.target.closest(...)` which control was clicked means a card works the moment it exists, no matter who created it.
 
-Expanding the likes is then just swapping which of the two spans carries `d-none`, exactly as `likes_line` set them up.
+Expanding the likes is then just swapping which of the two spans carries `d-none`, exactly as `likes_line` set them up. The comments expander works the same way: reveal the hidden block, then hide the link that asked for it. Two lines of state each, and no re-attaching anything.
 
 [Save the file](https://fmze.co/fftq-5.13.9).
 

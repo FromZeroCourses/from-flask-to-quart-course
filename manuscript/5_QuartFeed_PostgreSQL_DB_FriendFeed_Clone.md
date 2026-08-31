@@ -5045,7 +5045,7 @@ The permalink page shares the card, so it inherits all of that for free. It just
 
 [Save the file](https://fmze.co/fftq-5.13.14).
 
-Restart and look at the feed. It is FriendFeed. The blue bar, the white entries, the action row under each post, relative times that update themselves. Like one of your own posts and the page reloads with "you liked this" and the button reading Unlike.
+Restart and look at the feed. It is FriendFeed. The blue bar, the white entries, the action row under each post, relative times that update themselves. Like one of your own posts and the page reloads with your name on the likes line and the button reading Unlike.
 
 Two things are still not right, though, and both involve cards that JavaScript built rather than Jinja. Infinite scroll appends cards, and those cards keep their absolute timestamps, because `timeago.js` ran before they existed. Let's fix that and tighten the loader while we are in it. Replace `static/js/infinite_scroll.js`:
 

@@ -4626,6 +4626,8 @@ Finally the action row, which has one genuinely fiddly requirement:
 
 That last rule is worth dwelling on. Liking is a state change, so it has to be a form POST with a CSRF token, which means the control has to be a real `<button>` and not a link. But visually it belongs in a row of text links. So we strip the button back to nothing: no background, no border, no padding, inherit the font, and sit on the text baseline like its neighbours. The result is correct HTML that looks like the design, rather than a link pretending to be a button and losing CSRF protection on the way.
 
+![The Like control has to be a real form button so the POST carries a CSRF token, but it has to read as one more text link: the .ff-action-link reset is what bridges the two.](images/5.13-scene8-img2.png)
+
 [Save the file](https://fmze.co/fftq-5.13.7).
 
 The timestamps are next. Right now every post shows an absolute date, which is precise and unhelpful: in a feed you want "2 minutes ago". Modern browsers can do the formatting for us with `Intl.RelativeTimeFormat`, so this needs no library at all. Create `static/js/timeago.js`:

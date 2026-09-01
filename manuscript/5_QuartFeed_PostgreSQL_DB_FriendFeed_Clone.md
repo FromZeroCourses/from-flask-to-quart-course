@@ -4207,7 +4207,9 @@ from user.models import user_table  # noqa: F401
 from relationship.models import relationship_table  # noqa: F401
 from post.models import post_table, post_image_table  # noqa: F401
 from comment.models import comment_table  # noqa: F401
+# markua-start-insert
 from like.models import like_table  # noqa: F401
+# markua-end-insert
 ```
 
 [Save the file](https://fmze.co/fftq-5.13.2). Then rebuild the web image and let Alembic write and apply the revision:
@@ -4333,12 +4335,16 @@ Like every blueprint before it, this one has to be registered, and while we are 
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
+# markua-start-insert
 import random
 
+# markua-end-insert
 from quart import Quart, url_for
 
 from db import get_engine
+# markua-start-insert
 from utils.helpers import likes_line, linkify, slugify
+# markua-end-insert
 ```
 
 Then the blueprint itself, alongside the others:
@@ -4349,13 +4355,17 @@ Then the blueprint itself, alongside the others:
     from relationship.views import relationship_app
     from post.views import post_app
     from comment.views import comment_app
+# markua-start-insert
     from like.views import like_app
+# markua-end-insert
 
     app.register_blueprint(user_app)
     app.register_blueprint(relationship_app)
     app.register_blueprint(post_app)
     app.register_blueprint(comment_app)
+# markua-start-insert
     app.register_blueprint(like_app)
+# markua-end-insert
 ```
 
 Now that cache buster. We are about to write a stylesheet and two JavaScript files, and browsers cache those aggressively, which makes editing them maddening. A context processor hands every template a fresh random number on every request:
@@ -4376,7 +4386,9 @@ Last, hand `likes_line` to the templates, next to the `linkify` filter:
 
 {lang=python,line-numbers=on,starting-line-number=40}
 ```
+# markua-start-insert
     app.add_template_global(likes_line, "likes_line")
+# markua-end-insert
     app.add_template_filter(linkify, "linkify")
 ```
 
@@ -4393,8 +4405,10 @@ Now the line itself. FriendFeed had a nice touch: instead of a bare count it wro
 import os
 import re
 from functools import wraps
+# markua-start-insert
 from typing import Any, Callable, List, Optional
 from urllib.parse import quote
+# markua-end-insert
 ```
 
 Then add the helper below `post_image_url`:
@@ -4447,13 +4461,16 @@ The template can call `likes_line`, but nothing is loading the likers yet. Open 
 {lang=python,line-numbers=on,starting-line-number=19}
 ```
 from comment.models import comment_table
+# markua-start-insert
 from like.models import like_table
+# markua-end-insert
 ```
 
 Then teach `_post_extras` about likes. It already gathers a post's comments and images for one viewer, which is exactly the right place: the likers list, and whether this particular viewer has liked it, are per-post-per-viewer facts too.
 
 {lang=python,line-numbers=on,starting-line-number=117}
 ```
+# markua-start-insert
     # Usernames of everyone who liked, oldest-first, drives the FriendFeed
     # "alice, bob and N other people liked this" line.
     liker_rows = (
@@ -4476,12 +4493,15 @@ Then teach `_post_extras` about likes. It already gathers a post's comments and 
         )
     ).fetchone() is not None
 
+# markua-end-insert
     return {
         "comments": comment_rows,
         "images": await _post_images(conn, post_id),
+# markua-start-insert
         "likers": likers,
         "like_count": len(likers),
         "liked_by_me": liked_by_me,
+# markua-end-insert
     }
 ```
 
@@ -4886,6 +4906,7 @@ The navbar is doing very little for us: a dead wordmark and two flat links. Let'
 ```
 <nav class="navbar navbar-expand-lg navbar-light bg-light mb-3">
     <div class="container-fluid">
+<!-- markua-start-insert -->
         <a class="navbar-brand" href="{{ url_for('post_app.home') }}">QuartFeed</a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
             aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
@@ -4911,6 +4932,7 @@ The navbar is doing very little for us: a dead wordmark and two flat links. Let'
                 <a class="nav-link" href="{{ url_for('user_app.register') }}">Register</a>
                 {% endif %}
             </div>
+<!-- markua-end-insert -->
         </div>
     </div>
 </nav>
@@ -4929,7 +4951,16 @@ The home page needs the blue title bar, a wider column now that entries carry mo
         <div class="ff-bar mb-3">Home</div>
 ```
 
-Then the composer. FriendFeed put the photo control behind a small "Add photos" link rather than showing a file input to everyone, so replace the form's body:
+The composer stops using the form-field helper, so its import goes:
+
+{lang=html,line-numbers=off}
+```
+<!-- markua-start-delete -->
+        {% from "_formhelpers.html" import render_field %}
+<!-- markua-end-delete -->
+```
+
+Then the composer itself. FriendFeed put the photo control behind a small "Add photos" link rather than showing a file input to everyone, so replace the form's body:
 
 {lang=html,line-numbers=on,starting-line-number=18}
 ```
@@ -4937,6 +4968,7 @@ Then the composer. FriendFeed put the photo control behind a small "Add photos" 
             <div class="card-body">
                 <form method="POST" action="{{ url_for('post_app.create_post') }}" id="post-form"
                     enctype="multipart/form-data">
+<!-- markua-start-insert -->
                     <textarea name="message" class="form-control mb-2" rows="2"
                         placeholder="What's on your mind?">{{ form.message.data or '' }}</textarea>
                     <div class="add-photos-row d-none mb-2">
@@ -4947,6 +4979,7 @@ Then the composer. FriendFeed put the photo control behind a small "Add photos" 
                         {{ form.csrf_token }}
                         <button type="submit" class="btn btn-primary">Post</button>
                     </div>
+<!-- markua-end-insert -->
                 </form>
             </div>
         </div>
@@ -4969,9 +5002,13 @@ Now the card itself, which is where all of this comes together. Open `templates/
 {lang=html,line-numbers=on,starting-line-number=8}
 ```
         <div class="d-flex">
+<!-- markua-start-insert -->
             <img src="{{ post.avatar_url }}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
+<!-- markua-end-insert -->
             <div class="flex-grow-1">
+<!-- markua-start-insert -->
                 <a href="{{ url_for('user_app.profile', username=post.author_username) }}" class="fw-bold entry-author">@{{ post.author_username }}</a>
+<!-- markua-end-insert -->
 ```
 
 That `onerror` sets itself to `null` first, which matters: if the fallback image were also missing, the handler would fire again on its own replacement and loop forever.
@@ -5004,6 +5041,7 @@ While we're here, the comments deserve the same treatment the likes just got. A 
 {lang=html,line-numbers=on,starting-line-number=38}
 ```
                 <div class="comments mt-2">
+<!-- markua-start-insert -->
                     {% set cs = post.comments %}
                     {% set n = cs | length %}
                     {% if n > 5 %}
@@ -5014,6 +5052,7 @@ While we're here, the comments deserve the same treatment the likes just got. A 
                     {% else %}
                         {% for c in cs %}{{ comment_row(c) }}{% endfor %}
                     {% endif %}
+<!-- markua-end-insert -->
                 </div>
 ```
 
@@ -5028,11 +5067,21 @@ Last, the comment form starts hidden, since the "Comment" link in the action row
 
 [Save the file](https://fmze.co/fftq-5.13.13).
 
-The permalink page shares the card, so it inherits all of that for free. It just needs the wider column and its flash messages, and a slightly friendlier way back. Open `templates/post/detail.html`:
+The permalink page shares the card, so it inherits all of that for free. It just needs the wider column and its flash messages, and a slightly friendlier way back. The old link goes:
+
+{lang=html,line-numbers=off}
+```
+<!-- markua-start-delete -->
+        <a href="{{ url_for('post_app.home') }}">&larr; Back home</a>
+<!-- markua-end-delete -->
+```
+
+And the region becomes, in `templates/post/detail.html`:
 
 {lang=html,line-numbers=on,starting-line-number=9}
 ```
 <div class="row">
+<!-- markua-start-insert -->
     <div class="col-md-8 offset-md-2">
 
         {% for message in get_flashed_messages() %}
@@ -5040,6 +5089,7 @@ The permalink page shares the card, so it inherits all of that for free. It just
         {% endfor %}
 
         <a href="{{ url_for('post_app.home') }}" class="d-inline-block mb-3">&larr; Back to feed</a>
+<!-- markua-end-insert -->
 
         {% include "post/_post_card.html" %}
 
@@ -5055,6 +5105,7 @@ Two things are still not right, though, and both involve cards that JavaScript b
 
 {lang=js,line-numbers=on}
 ```
+// markua-start-insert
 // Infinite-scroll pagination for the QuartFeed home page.
 // Watches #feed-sentinel; when it scrolls into view, fetches the next page of
 // feed cards from /feed?offset=N and appends them to #feed. Vanilla JS.
@@ -5062,11 +5113,15 @@ document.addEventListener("DOMContentLoaded", function () {
   var feed = document.getElementById("feed");
   var sentinel = document.getElementById("feed-sentinel");
   // Only run on pages that have both (i.e. the home feed).
+// markua-end-insert
   if (!feed || !sentinel) return;
 
+// markua-start-insert
   var loading = false;
   var exhausted = false;
+// markua-end-insert
 
+// markua-start-insert
   function currentCount() {
     return feed.querySelectorAll(":scope > [data-post-id]").length;
   }
@@ -5092,6 +5147,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (window.formatTimeago) window.formatTimeago(feed);
     }
   }
+// markua-end-insert
 ```
 
 Three real improvements hide in `appendCards`. We parse the HTML into a detached div first, then move only the cards we actually want into a document fragment, and append that fragment once, so the browser does a single layout pass instead of one per card. The dedupe check matters more than it looks: SSE can prepend a post while you are scrolling, which shifts every offset by one, and without this you would see the same post twice. And the `formatTimeago(feed)` call is the fix we came for, formatting the newly-arrived times.
@@ -5102,10 +5158,13 @@ Now the loader and the observer:
 
 {lang=js,line-numbers=on,starting-line-number=39}
 ```
+// markua-start-insert
   function loadMore() {
     if (loading || exhausted) return;
+// markua-end-insert
     loading = true;
 
+// markua-start-insert
     var offset = currentCount();
     fetch("/feed?offset=" + offset, { headers: { "X-Requested-With": "fetch" } })
       .then(function (resp) {
@@ -5126,7 +5185,9 @@ Now the loader and the observer:
         loading = false;
       });
   }
+// markua-end-insert
 
+// markua-start-insert
   var observer = new IntersectionObserver(
     function (entries) {
       for (var i = 0; i < entries.length; i++) {
@@ -5137,6 +5198,7 @@ Now the loader and the observer:
     },
     { rootMargin: "200px" }
   );
+// markua-end-insert
 
   observer.observe(sentinel);
 });
@@ -5159,30 +5221,54 @@ Every card `broadcast.js` prepends has to match what `_post_card.html` renders, 
 
 {lang=js,line-numbers=on,starting-line-number=35}
 ```
+// markua-start-insert
             <p class="mb-1 entry-text">${window.linkify ? window.linkify(post.message) : escapeHtml(post.message)}</p>
+// markua-end-insert
             ${(post.images && post.images.length)
+// markua-start-insert
               ? `<div class="d-flex gap-2 mb-2" style="overflow-x: auto;">${post.images
+// markua-end-insert
                   .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
                   .join("")}</div>`
               : ""}
+// markua-start-insert
             <div class="ff-meta small text-muted mt-1">
               <a href="${post.permalink}" class="ff-meta-time"><time class="timeago" datetime="${post.created}">${new Date(post.created).toLocaleString()}</time></a>
               - <a href="#" class="ff-comment">Comment</a>
               - <form method="POST" action="/like/${post.post_id}" class="d-inline"><input type="hidden" name="csrf_token" value="${csrfToken}"><button type="submit" class="ff-action-link">Like</button></form>
             </div>
             <div class="likes small text-muted mt-1"></div>
+// markua-end-insert
             <div class="comments mt-2"></div>
+// markua-start-insert
             <form method="POST" action="/comment/${post.post_id}" class="comment-form mt-2 d-flex d-none">
+// markua-end-insert
 ```
 
 `window.linkify ? window.linkify(...) : escapeHtml(...)` is a small piece of defensive wiring. If `interactions.js` failed to load, we fall back to plain escaping rather than throwing and losing the card entirely. The likes div is empty because a brand-new post has no likes yet, and the button always says "Like" for the same reason.
 
-That old `formatWhen` helper we wrote for absolute dates can go: the `<time class="timeago">` tag plus `timeago.js` replaces it. Delete it, and call `formatTimeago` on the new card right after prepending:
+That old `formatWhen` helper we wrote for absolute dates is now dead weight: the `<time class="timeago">` tag plus `timeago.js` does the job, and does it better because it keeps updating. Delete the whole helper:
+
+{lang=js,line-numbers=off}
+```
+// markua-start-delete
+  const formatWhen = (iso) => {
+    const d = new Date(iso);
+    const month = d.toLocaleString("en-US", { month: "short" });
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${month} ${pad(d.getDate())}, ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+// markua-end-delete
+```
+
+Then call `formatTimeago` on the new card right after prepending it, so its timestamp is relative like every other:
 
 {lang=js,line-numbers=on,starting-line-number=56}
 ```
     feed.prepend(card);
+// markua-start-insert
     if (window.formatTimeago) window.formatTimeago(card);
+// markua-end-insert
 ```
 
 Give the comment listener the same `linkify` treatment, so a link in a live comment behaves like a link anywhere else:
@@ -5196,6 +5282,7 @@ And finally the listener this whole lesson was heading towards. Add it after the
 
 {lang=js,line-numbers=on,starting-line-number=72}
 ```
+// markua-start-insert
   es.addEventListener("like", (e) => {
     const like = JSON.parse(e.data);
     const card = feed.querySelector(`[data-post-id="${like.post_id}"]`);
@@ -5204,6 +5291,7 @@ And finally the listener this whole lesson was heading towards. Add it after the
     const likesDiv = card.querySelector(".likes");
     if (likesDiv && window.renderLikesLine)
       likesDiv.innerHTML = window.renderLikesLine(like.likers || []);
+// markua-end-insert
   });
 ```
 
@@ -5228,7 +5316,9 @@ from user.models import user_table  # noqa: F401
 from relationship.models import relationship_table  # noqa: F401
 from post.models import post_table, feed_table  # noqa: F401
 from comment.models import comment_table  # noqa: F401
+# markua-start-insert
 from like.models import like_table  # noqa: F401
+# markua-end-insert
 ```
 
 [Save the file](https://fmze.co/fftq-5.13.17).

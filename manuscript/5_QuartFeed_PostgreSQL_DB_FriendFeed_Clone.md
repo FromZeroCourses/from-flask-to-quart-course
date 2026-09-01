@@ -4394,6 +4394,8 @@ Last, hand `likes_line` to the templates, next to the `linkify` filter:
 
 A filter and a global are two ways of exposing the same kind of function to Jinja. A filter reads well when it transforms one value, as in `post.message | linkify`. A global reads better when the function is really a small renderer we call by name, as in `likes_line(post.likers)`, so that is the shape we use here.
 
+![A filter transforms one value on its way through the template; a global is a small renderer we call by name.](images/5.13-scene5-img2.png)
+
 [Save the file](https://fmze.co/fftq-5.13.4).
 
 Now the line itself. FriendFeed had a nice touch: instead of a bare count it wrote out "Alice, Bob and Carol liked this", and collapsed the list once it got long. Open `utils/helpers.py`. We need two more imports, a `List` for the signature and `quote` to build safe profile URLs:

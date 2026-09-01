@@ -4638,6 +4638,8 @@ time.timeago {
 
 One rule in there is worth a second look, though, because it is not really about looks. Liking is a state change, so it has to be a form POST carrying a CSRF token, which means the control has to be a real `<button>` and not a link. But visually it belongs in a row of text links. So `.ff-action-link` strips the button back to nothing: no background, no border, no padding, inherit the font, sit on the text baseline like its neighbours. That is how you get correct, secure HTML that still looks like the design, instead of a link pretending to be a button and losing CSRF protection on the way.
 
+![Liking is a state change, so the control has to be a real button inside a CSRF-protected POST form; .ff-action-link is what makes that button sit in the row looking like the text links beside it.](images/5.13-scene9-img1.png)
+
 [Save the file](https://fmze.co/fftq-5.13.7).
 
 Two pieces of behaviour are still missing, and they have something in common. The likes line collapses past five names, so something has to expand it. And when a like arrives over SSE, the browser has to rebuild that line itself, in exactly the shape `likes_line` produces on the server. Create `static/js/interactions.js`:

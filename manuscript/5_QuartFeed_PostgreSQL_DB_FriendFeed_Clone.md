@@ -4978,7 +4978,7 @@ The empty-looking `.likes` div is important even when there are no likers: `like
                 </div>
 ```
 
-While we're here, the comments deserve the same treatment the likes just got. A post with forty comments should not print forty comments:
+While we're here, the comments deserve the same treatment the likes just got, because a post with forty comments should not print forty comments.
 
 Past five comments we show the first two, hide the middle, and show the last two, with the count of what is hidden in between. That shape is deliberate: you get the start of the conversation and its most recent state, which is what you actually want when you glance at a thread.
 
@@ -4987,7 +4987,7 @@ Past five comments we show the first two, hide the middle, and show the last two
                 <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="comment-form mt-2 d-flex d-none">
 ```
 
-Last, the comment form starts hidden, since the "Comment" link in the action row is now what reveals it:
+Last, the comment form starts hidden, since the "Comment" link in the action row is now what reveals it.
 
 [Save the file](https://fmze.co/fftq-5.13.12).
 

@@ -4740,6 +4740,8 @@ Read `renderLikesLine` side by side with the Python `likes_line` and it is the s
 
 `formatTimeago` is the small one, and it is small on purpose. Every post currently shows an absolute date, which is precise and unhelpful: in a feed you want "2 minutes ago". Writing that yourself means a units table, rounding rules and a refresh timer, which is a lot of date arithmetic for a course about Quart. So we hand it to `timeago.js`, a two-kilobyte library that does exactly this one job, and our whole contribution is passing it the nodes to look after. It re-renders them on its own from then on, so "just now" turns into "a minute ago" without us running a timer.
 
+![Relative timestamps are borrowed, not built: timeago.js replaces the units table, rounding rules and refresh timer we would otherwise write, and keeps re-rendering the nodes on its own.](images/5.13-scene10-img1.png)
+
 Finally, one click handler for the whole page, and the first pass over the timestamps:
 
 {lang=js,line-numbers=on,starting-line-number=83}

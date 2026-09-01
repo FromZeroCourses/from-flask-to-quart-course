@@ -1,10 +1,13 @@
+// Vanilla JS SSE client for the QuartFeed home page.
+// Listens for "post" / "comment" / "like" events and renders them into the
+// #feed container using template literals (no framework).
 document.addEventListener("DOMContentLoaded", () => {
   const feed = document.getElementById("feed");
   if (!feed) return;
 
   const es = new EventSource("/sse");
 
-  // Reuse the page's rendered CSRF token so SSE-built comment forms can submit.
+  // Reuse the page's rendered CSRF token so SSE-built comment/like forms can submit.
   const csrfInput = document.querySelector('#post-form input[name="csrf_token"]');
   const csrfToken = csrfInput ? csrfInput.value : "";
 
@@ -12,13 +15,6 @@ document.addEventListener("DOMContentLoaded", () => {
     String(str).replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
-
-  const formatWhen = (iso) => {
-    const d = new Date(iso);
-    const month = d.toLocaleString("en-US", { month: "short" });
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${month} ${pad(d.getDate())}, ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  };
 
   es.addEventListener("post", (e) => {
     const post = JSON.parse(e.data);
@@ -30,21 +26,26 @@ document.addEventListener("DOMContentLoaded", () => {
     card.innerHTML = `
       <div class="card-body">
         <div class="d-flex">
-          <img src="${post.avatar_url}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40" alt="avatar">
+          <img src="${post.avatar_url}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
           <div class="flex-grow-1">
-            <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold">@${escapeHtml(post.author_username)}</a>
+            <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold entry-author">@${escapeHtml(post.author_username)}</a>
             ${(post.reason_type === "comment" && post.reason_username)
               ? ` <span class="text-muted small ms-1">(<a href="/user/${encodeURIComponent(post.reason_username)}">${escapeHtml(post.reason_username)}</a> commented on this)</span>`
               : ""}
-            <p class="mb-1">${escapeHtml(post.message)}</p>
+            <p class="mb-1 entry-text">${window.linkify ? window.linkify(post.message) : escapeHtml(post.message)}</p>
             ${(post.images && post.images.length)
-              ? `<div class="d-flex gap-2 mb-2">${post.images
+              ? `<div class="d-flex gap-2 mb-2" style="overflow-x: auto;">${post.images
                   .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
                   .join("")}</div>`
               : ""}
-            <a href="${post.permalink}" class="small text-muted">${formatWhen(post.created)}</a>
+            <div class="ff-meta small text-muted mt-1">
+              <a href="${post.permalink}" class="ff-meta-time"><time class="timeago" datetime="${post.created}">${new Date(post.created).toLocaleString()}</time></a>
+              - <a href="#" class="ff-comment">Comment</a>
+              - <form method="POST" action="/like/${post.post_id}" class="d-inline"><input type="hidden" name="csrf_token" value="${csrfToken}"><button type="submit" class="ff-action-link">Like</button></form>
+            </div>
+            <div class="likes small text-muted mt-1"></div>
             <div class="comments mt-2"></div>
-            <form method="POST" action="/comment/${post.post_id}" class="comment-form mt-2 d-flex">
+            <form method="POST" action="/comment/${post.post_id}" class="comment-form mt-2 d-flex d-none">
               <input type="hidden" name="csrf_token" value="${csrfToken}">
               <input type="text" name="comment" class="form-control form-control-sm me-2" placeholder="Add a comment...">
               <button type="submit" class="btn btn-sm btn-outline-secondary">Send</button>
@@ -53,6 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
       </div>`;
     feed.prepend(card);
+    if (window.formatTimeago) window.formatTimeago(card);
   });
 
   es.addEventListener("comment", (e) => {
@@ -63,7 +65,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const commentsDiv = card.querySelector(".comments");
     const commentEl = document.createElement("div");
     commentEl.className = "comment small";
-    commentEl.innerHTML = `<span class="comment-bubble">💬</span> ${escapeHtml(comment.comment)} - <a href="/user/${encodeURIComponent(comment.author_username)}" class="comment-author">@${escapeHtml(comment.author_username)}</a>`;
+    commentEl.innerHTML = `<span class="comment-bubble">💬</span> ${window.linkify ? window.linkify(comment.comment) : escapeHtml(comment.comment)} - <a href="/user/${encodeURIComponent(comment.author_username)}" class="comment-author">@${escapeHtml(comment.author_username)}</a>`;
     commentsDiv.appendChild(commentEl);
+  });
+
+  es.addEventListener("like", (e) => {
+    const like = JSON.parse(e.data);
+    const card = feed.querySelector(`[data-post-id="${like.post_id}"]`);
+    if (!card) return;
+
+    const likesDiv = card.querySelector(".likes");
+    if (likesDiv && window.renderLikesLine)
+      likesDiv.innerHTML = window.renderLikesLine(like.likers || []);
   });
 });

@@ -4370,6 +4370,8 @@ Then the blueprint itself, alongside the others:
 
 Now that cache buster. We are about to write a stylesheet and two JavaScript files, and browsers cache those aggressively, which makes editing them maddening. A context processor hands every template a fresh random number on every request:
 
+![A new query string on every request makes the URL unique, so the browser cannot serve a stale copy of our stylesheet or JavaScript.](images/5.13-scene5-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=28}
 ```
     @app.context_processor

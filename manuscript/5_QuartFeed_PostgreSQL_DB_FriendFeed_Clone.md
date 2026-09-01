@@ -5309,6 +5309,8 @@ The first test likes a post and checks a row appears in the `like` table. The se
 
 The "A and B liked this" line has its own small helper, `likes_line`, that collapses long lists so a wildly popular post doesn't print a hundred names. It's a pure function, so we test it directly. Add these to the `tests/test_helpers.py` we started when testing messages.
 
+![likes_line renders nothing for no likers, links every name for a few, and collapses a crowd into three names plus a hidden likers-full list.](images/5.13-scene22-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=17}
 ```
 from utils.helpers import likes_line

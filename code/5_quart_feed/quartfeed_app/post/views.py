@@ -17,6 +17,7 @@ from quart import (
 from sqlalchemy import insert, select
 
 from comment.models import comment_table
+from like.models import like_table
 from post.feed_ops import fan_out_post
 from post.forms import PostForm
 from post.models import feed_table, post_image_table, post_table
@@ -113,9 +114,34 @@ async def _post_extras(conn: Any, post_id: int, user_id: int) -> Dict[str, Any]:
         )
     ).fetchall()
 
+    # Usernames of everyone who liked, oldest-first, drives the FriendFeed
+    # "alice, bob and N other people liked this" line.
+    liker_rows = (
+        await conn.execute(
+            select(user_table.c.username)
+            .select_from(
+                like_table.join(user_table, like_table.c.user_id == user_table.c.id)
+            )
+            .where(like_table.c.post_id == post_id)
+            .order_by(like_table.c.id.asc())
+        )
+    ).fetchall()
+    likers = [row.username for row in liker_rows]
+
+    liked_by_me = (
+        await conn.execute(
+            select(like_table).where(
+                (like_table.c.post_id == post_id) & (like_table.c.user_id == user_id)
+            )
+        )
+    ).fetchone() is not None
+
     return {
         "comments": comment_rows,
         "images": await _post_images(conn, post_id),
+        "likers": likers,
+        "like_count": len(likers),
+        "liked_by_me": liked_by_me,
     }
 
 

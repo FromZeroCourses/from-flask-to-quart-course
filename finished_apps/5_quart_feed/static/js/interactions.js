@@ -1,5 +1,6 @@
-// FriendFeed-style feed interactions: expandable likes/comments and URL
-// linkifying. Exposes window.linkify / window.renderLikesLine so the SSE client
+// FriendFeed-style feed interactions: expandable likes/comments, URL
+// linkifying, and relative timestamps. Exposes window.linkify /
+// window.renderLikesLine / window.formatTimeago so the SSE client
 // (broadcast.js) renders dynamically-inserted cards identically to the server.
 (function () {
   "use strict";
@@ -69,8 +70,15 @@
     );
   }
 
+  // Relative timestamps, via the timeago.js library loaded in base.html.
+  // It keeps re-rendering on its own, so each node is registered once.
+  function formatTimeago(root) {
+    timeago.render((root || document).querySelectorAll("time.timeago"));
+  }
+
   window.linkify = linkify;
   window.renderLikesLine = renderLikesLine;
+  window.formatTimeago = formatTimeago;
 
   document.addEventListener("click", function (e) {
     // "Comment" action -> reveal + focus the comment box.
@@ -115,5 +123,9 @@
       if (hidden) hidden.classList.remove("d-none");
       cmore.closest(".comments-more-wrap").classList.add("d-none");
     }
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    formatTimeago(document);
   });
 })();

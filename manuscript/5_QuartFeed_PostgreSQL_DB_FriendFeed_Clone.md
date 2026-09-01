@@ -4513,7 +4513,9 @@ That is the like feature, end to end on the server. Now the look.
 
 ![Each part of the FriendFeed look maps to one class the stylesheet targets: the wordmark, the blue column bar, the white entry card, the two type sizes, and the row of text links under every post.](images/5.13-scene8-img1.png)
 
-Everything we have built renders through Bootstrap's defaults, which is fine but generic. FriendFeed had a specific, recognizable style: a soft blue-grey page, white entries with thin borders, a blue title bar over the column, and a row of small text links under each post reading "time - Comment - Like". Almost none of that needs new markup. It needs a stylesheet. Create `static/css/friendfeed.css`, starting with the palette and the page:
+Everything we have built renders through Bootstrap's defaults, which is fine but generic. FriendFeed had a specific, recognizable style: a soft blue-grey page, white entries with thin borders, a blue title bar over the column, and a row of small text links under each post reading "time - Comment - Like". Almost none of that needs new markup. It needs a stylesheet.
+
+This is not a CSS course, so we are not going to walk through it rule by rule. Create `static/css/friendfeed.css` with the styles below, which give us the FriendFeed skin and the Like control:
 
 {lang=css,line-numbers=on}
 ```
@@ -4552,14 +4554,7 @@ body {
     border-radius: 6px 6px 0 0;
     font-size: 0.95rem;
 }
-```
 
-Five custom properties at the top hold the whole palette, so the blue is defined once and every rule after this refers to `var(--ff-blue)`. The page turns a pale blue-grey, which is what makes white cards read as cards without needing a shadow.
-
-Next, the entries themselves and the type hierarchy:
-
-{lang=css,line-numbers=on,starting-line-number=37}
-```
 /* Entries: white cards with thin borders, no heavy shadow */
 .card {
     border: 1px solid var(--ff-border);
@@ -4611,14 +4606,7 @@ a {
 time.timeago {
     color: var(--ff-muted);
 }
-```
 
-The important part here is the size relationship. The author name and the post text step up slightly, and everything under them, the meta row, the likes line, the comments, stays at Bootstrap's `small`. That single contrast is most of what makes a dense feed readable: your eye finds the post first and the machinery second.
-
-Finally the action row, which has one genuinely fiddly requirement:
-
-{lang=css,line-numbers=on,starting-line-number=89}
-```
 /* FriendFeed action row: "time - Comment - Like - Hide" as text links */
 .ff-meta a,
 .ff-action-link {
@@ -4644,104 +4632,17 @@ Finally the action row, which has one genuinely fiddly requirement:
 }
 ```
 
-That last rule is worth dwelling on. Liking is a state change, so it has to be a form POST with a CSRF token, which means the control has to be a real `<button>` and not a link. But visually it belongs in a row of text links. So we strip the button back to nothing: no background, no border, no padding, inherit the font, and sit on the text baseline like its neighbours. The result is correct HTML that looks like the design, rather than a link pretending to be a button and losing CSRF protection on the way.
-
-![The Like control has to be a real form button so the POST carries a CSRF token, but it has to read as one more text link: the .ff-action-link reset is what bridges the two.](images/5.13-scene8-img2.png)
+One rule in there is worth a second look, though, because it is not really about looks. Liking is a state change, so it has to be a form POST carrying a CSRF token, which means the control has to be a real `<button>` and not a link. But visually it belongs in a row of text links. So `.ff-action-link` strips the button back to nothing: no background, no border, no padding, inherit the font, sit on the text baseline like its neighbours. That is how you get correct, secure HTML that still looks like the design, instead of a link pretending to be a button and losing CSRF protection on the way.
 
 [Save the file](https://fmze.co/fftq-5.13.7).
-
-The timestamps are next. Right now every post shows an absolute date, which is precise and unhelpful: in a feed you want "2 minutes ago". Modern browsers can do the formatting for us with `Intl.RelativeTimeFormat`, so this needs no library at all. Create `static/js/timeago.js`:
-
-{lang=js,line-numbers=on}
-```
-// Relative-time formatting for <time class="timeago" datetime="..."> elements.
-// Zero dependencies: uses the native Intl.RelativeTimeFormat. Timestamps are
-// stored as UTC (the datetime attribute carries a UTC offset), so parsing is
-// unambiguous. Safe to call repeatedly and on newly-inserted nodes.
-(function () {
-  "use strict";
-
-  var rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-
-  // Ordered largest-first so we pick the coarsest sensible unit.
-  var UNITS = [
-    ["year", 60 * 60 * 24 * 365],
-    ["month", 60 * 60 * 24 * 30],
-    ["week", 60 * 60 * 24 * 7],
-    ["day", 60 * 60 * 24],
-    ["hour", 60 * 60],
-    ["minute", 60],
-    ["second", 1],
-  ];
-
-  // Return a relative-time string like "2 minutes ago" / "in 3 days" for the
-  // given ISO timestamp, relative to now.
-  function relative(iso) {
-    var then = new Date(iso).getTime();
-    if (isNaN(then)) return null;
-
-    var diffSeconds = (then - Date.now()) / 1000; // negative = in the past
-    var abs = Math.abs(diffSeconds);
-
-    if (abs < 45) return rtf.format(0, "second"); // "now" / "just now"
-
-    for (var i = 0; i < UNITS.length; i++) {
-      var unit = UNITS[i][0];
-      var secondsInUnit = UNITS[i][1];
-      if (abs >= secondsInUnit) {
-        var value = Math.round(diffSeconds / secondsInUnit);
-        return rtf.format(value, unit);
-      }
-    }
-    return rtf.format(0, "second");
-  }
-```
-
-The units table is ordered largest first, and the loop takes the first unit the gap is at least as big as. That is what gives you "3 days ago" instead of "72 hours ago" without any special casing. Anything under 45 seconds is just "now".
-
-Now the part that walks the page, and the wiring:
-
-{lang=js,line-numbers=on,starting-line-number=43}
-```
-  // Format every <time class="timeago"> under `root` (default: whole document).
-  function formatTimeago(root) {
-    root = root || document;
-    var scope = root.querySelectorAll ? root : document;
-    var nodes = scope.querySelectorAll("time.timeago");
-    for (var i = 0; i < nodes.length; i++) {
-      var el = nodes[i];
-      var iso = el.getAttribute("datetime");
-      if (!iso) continue;
-      var text = relative(iso);
-      if (text) el.textContent = text;
-      el.title = new Date(iso).toLocaleString();
-    }
-  }
-
-  window.formatTimeago = formatTimeago;
-
-  document.addEventListener("DOMContentLoaded", function () {
-    formatTimeago(document);
-    // Keep them fresh (e.g. "just now" -> "1 minute ago") without a reload.
-    setInterval(function () {
-      formatTimeago(document);
-    }, 60000);
-  });
-})();
-```
-
-`formatTimeago` takes an optional root so we can call it on a single freshly-inserted card rather than rescanning the whole page, which matters once SSE and infinite scroll start adding cards. We hang it on `window` for exactly that reason. The server still renders the absolute date inside the `<time>` tag, so a visitor with JavaScript off sees a real date instead of a blank, and we keep the full timestamp in the `title` attribute so hovering still tells you exactly when.
-
-The minute-long interval is what keeps "just now" from being a lie five minutes later.
-
-[Save the file](https://fmze.co/fftq-5.13.8).
 
 Two pieces of behaviour are still missing, and they have something in common. The likes line collapses past five names, so something has to expand it. And when a like arrives over SSE, the browser has to rebuild that line itself, in exactly the shape `likes_line` produces on the server. Create `static/js/interactions.js`:
 
 {lang=js,line-numbers=on}
 ```
-// FriendFeed-style feed interactions: expandable likes/comments and URL
-// linkifying. Exposes window.linkify / window.renderLikesLine so the SSE client
+// FriendFeed-style feed interactions: expandable likes/comments, URL
+// linkifying, and relative timestamps. Exposes window.linkify /
+// window.renderLikesLine / window.formatTimeago so the SSE client
 // (broadcast.js) renders dynamically-inserted cards identically to the server.
 (function () {
   "use strict";
@@ -4782,9 +4683,9 @@ Two pieces of behaviour are still missing, and they have something in common. Th
 
 This is a deliberate port of the `linkify` we wrote in Python, and the porting is the point. A post that arrives over SSE is built by this file, and a post that arrives with the rest of the page is built by Jinja. If the two disagree about how a URL is rendered, the same post ends up with two different appearances depending on which path delivered it, and neither one is wrong enough to notice quickly. Same rule, both sides.
 
-Now the likes line, which is the same argument again:
+Now the likes line, which is the same argument again, plus the timestamps:
 
-{lang=js,line-numbers=on,starting-line-number=40}
+{lang=js,line-numbers=on,starting-line-number=41}
 ```
   // Build the "A, B and C liked this" line (mirrors helpers.likes_line).
   function renderLikesLine(likers, head, collapseOver) {
@@ -4818,15 +4719,24 @@ Now the likes line, which is the same argument again:
     );
   }
 
+  // Relative timestamps, via the timeago.js library loaded in base.html.
+  // It keeps re-rendering on its own, so each node is registered once.
+  function formatTimeago(root) {
+    timeago.render((root || document).querySelectorAll("time.timeago"));
+  }
+
   window.linkify = linkify;
   window.renderLikesLine = renderLikesLine;
+  window.formatTimeago = formatTimeago;
 ```
 
-Read it side by side with the Python `likes_line` and it is the same function twice: same defaults of three and five, same "and" before the last name, same two spans past the threshold. Keeping a pair like this in step is a real maintenance cost, and it is worth paying only where the two renderers genuinely have to produce identical output. This is one of those places, because a like can update a card that Jinja drew or a card that JavaScript drew, and it must not matter which.
+Read `renderLikesLine` side by side with the Python `likes_line` and it is the same function twice: same defaults of three and five, same "and" before the last name, same two spans past the threshold. Keeping a pair like this in step is a real maintenance cost, and it is worth paying only where the two renderers genuinely have to produce identical output. This is one of those places, because a like can update a card that Jinja drew or a card that JavaScript drew, and it must not matter which.
 
-Finally, one click handler for the whole page:
+`formatTimeago` is the small one, and it is small on purpose. Every post currently shows an absolute date, which is precise and unhelpful: in a feed you want "2 minutes ago". Writing that yourself means a units table, rounding rules and a refresh timer, which is a lot of date arithmetic for a course about Quart. So we hand it to `timeago.js`, a two-kilobyte library that does exactly this one job, and our whole contribution is passing it the nodes to look after. It re-renders them on its own from then on, so "just now" turns into "a minute ago" without us running a timer.
 
-{lang=js,line-numbers=on,starting-line-number=75}
+Finally, one click handler for the whole page, and the first pass over the timestamps:
+
+{lang=js,line-numbers=on,starting-line-number=83}
 ```
   document.addEventListener("click", function (e) {
     // "Comment" action -> reveal + focus the comment box.
@@ -4872,14 +4782,18 @@ Finally, one click handler for the whole page:
       cmore.closest(".comments-more-wrap").classList.add("d-none");
     }
   });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    formatTimeago(document);
+  });
 })();
 ```
 
 One listener on `document` handles all four interactions, and that is not laziness. Cards arrive from three directions now: rendered by Jinja on load, appended by infinite scroll, and prepended by SSE. If we attached handlers to each button we would have to re-attach them every time a card appeared, and forgetting once means a dead link with no error. Listening on `document` and asking `e.target.closest(...)` which control was clicked means a card works the moment it exists, no matter who created it.
 
-Expanding the likes is then just swapping which of the two spans carries `d-none`, exactly as `likes_line` set them up. The comments expander works the same way: reveal the hidden block, then hide the link that asked for it. Two lines of state each, and no re-attaching anything.
+Expanding the likes is then just swapping which of the two spans carries `d-none`, exactly as `likes_line` set them up.
 
-[Save the file](https://fmze.co/fftq-5.13.9).
+[Save the file](https://fmze.co/fftq-5.13.8).
 
 Nothing loads any of this yet. Open `templates/base.html` and add the stylesheet after Bootstrap's, so ours wins:
 
@@ -4888,17 +4802,17 @@ Nothing loads any of this yet. Open `templates/base.html` and add the stylesheet
     <link rel="stylesheet" href="{{ url_for('static', filename='css/friendfeed.css') }}?cb={{ cb }}">
 ```
 
-And the two scripts at the bottom, after Bootstrap's bundle so the dropdown still works:
+And at the bottom, the `timeago.js` library from a CDN followed by our own script, both after Bootstrap's bundle so the navbar dropdown still works:
 
 {lang=html,line-numbers=on,starting-line-number=26}
 ```
-    <script src="{{ url_for('static', filename='js/timeago.js') }}?cb={{ cb }}"></script>
+    <script src="https://cdn.jsdelivr.net/npm/timeago.js@4.0.2/dist/timeago.min.js"></script>
     <script src="{{ url_for('static', filename='js/interactions.js') }}?cb={{ cb }}"></script>
 ```
 
-There is our `?cb={{ cb }}` from the context processor. Both files load on every page, because both the feed and a post's permalink page want relative times and working expanders.
+The library has to come first, because `interactions.js` calls `timeago.render` as soon as the page is ready. There is our `?cb={{ cb }}` from the context processor on our own file, and deliberately not on the CDN one: the whole point of a versioned CDN URL is that it is safe to cache forever.
 
-[Save the file](https://fmze.co/fftq-5.13.10).
+[Save the file](https://fmze.co/fftq-5.13.9).
 
 The navbar is doing very little for us: a dead wordmark and two flat links. Let's make the wordmark go home, collapse the nav properly on a phone, and gather the account links into a dropdown under the username. Replace `templates/navbar.html`:
 
@@ -4940,7 +4854,7 @@ The navbar is doing very little for us: a dead wordmark and two flat links. Let'
 
 The `navbar-toggler` and the `collapse` wrapper are the Bootstrap pattern for a nav that turns into a hamburger on a narrow screen, and the dropdown is what stops the bar filling up as we add pages. Notice the brand now links to `post_app.home`, so the wordmark behaves the way every wordmark on the web behaves.
 
-[Save the file](https://fmze.co/fftq-5.13.11).
+[Save the file](https://fmze.co/fftq-5.13.10).
 
 The home page needs the blue title bar, a wider column now that entries carry more, and a composer that matches the rest. Open `templates/post/home.html`. First the column and the bar:
 
@@ -4995,7 +4909,7 @@ Finally, add the cache buster to the two script tags at the bottom:
 <script src="{{ url_for('static', filename='js/infinite_scroll.js') }}?cb={{ cb }}"></script>
 ```
 
-[Save the file](https://fmze.co/fftq-5.13.12).
+[Save the file](https://fmze.co/fftq-5.13.11).
 
 Now the card itself, which is where all of this comes together. Open `templates/post/_post_card.html`. The author line and the post text pick up the two type classes, and every avatar gets a fallback for a broken image:
 
@@ -5065,7 +4979,7 @@ Last, the comment form starts hidden, since the "Comment" link in the action row
                 <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="comment-form mt-2 d-flex d-none">
 ```
 
-[Save the file](https://fmze.co/fftq-5.13.13).
+[Save the file](https://fmze.co/fftq-5.13.12).
 
 The permalink page shares the card, so it inherits all of that for free. It just needs the wider column and its flash messages, and a slightly friendlier way back. The old link goes:
 
@@ -5097,7 +5011,7 @@ And the region becomes, in `templates/post/detail.html`:
 </div>
 ```
 
-[Save the file](https://fmze.co/fftq-5.13.14).
+[Save the file](https://fmze.co/fftq-5.13.13).
 
 Restart and look at the feed. It is FriendFeed. The blue bar, the white entries, the action row under each post, relative times that update themselves. Like one of your own posts and the page reloads with your name on the likes line and the button reading Unlike.
 
@@ -5206,7 +5120,7 @@ Now the loader and the observer:
 
 The `loading` guard stops the observer firing three requests while one is in flight, and `exhausted` disconnects the observer for good once the server returns nothing, so we stop asking. The `.catch` with a `.finally` is the important pairing: on a network blip we swallow the error but still clear `loading`, so scrolling again retries instead of the page deciding it has reached the end forever.
 
-[Save the file](https://fmze.co/fftq-5.13.15).
+[Save the file](https://fmze.co/fftq-5.13.14).
 
 The other JavaScript-built card is the live one, and it has more to learn. Open `static/js/broadcast.js`. It handles three event types now rather than two, so give it a header that says so:
 
@@ -5297,7 +5211,7 @@ And finally the listener this whole lesson was heading towards. Add it after the
 
 Nine lines, because all the work was done elsewhere. Find the card the event is about, find its likes div, and rewrite it with the browser twin of `likes_line`, fed the list of names the server just sent. The server decided who should receive this event, `renderLikesLine` decides how it reads, and this listener only has to put the one in the other.
 
-[Save the file](https://fmze.co/fftq-5.13.16).
+[Save the file](https://fmze.co/fftq-5.13.15).
 
 Now try it properly. Restart, open two browsers side by side, and log in as two users who follow each other. Post something from the left. It appears on the right instantly, in the new skin, with a relative timestamp. Click Like on the right and the left says "marta liked this" without a refresh. Click Like again and it disappears. That is the toggle, the unique constraint, the targeted delivery, and the two matching renderers, all doing their jobs at once.
 
@@ -5321,7 +5235,7 @@ from like.models import like_table  # noqa: F401
 # markua-end-insert
 ```
 
-[Save the file](https://fmze.co/fftq-5.13.17).
+[Save the file](https://fmze.co/fftq-5.13.16).
 
 Now create `tests/test_like.py`.
 
@@ -5385,7 +5299,7 @@ async def test_like_requires_login(create_test_client):
 
 The first test likes a post and checks a row appears in the `like` table. The second clicks the same button twice and confirms the row is gone, which is the whole toggle behavior in two lines. The third keeps the route behind a login. Because our `like` table has a unique constraint on the post and user pair, these tests also quietly prove we can't double-like a post, since a second like removes the first instead of stacking.
 
-[Save the file](https://fmze.co/fftq-5.13.18).
+[Save the file](https://fmze.co/fftq-5.13.17).
 
 The "A and B liked this" line has its own small helper, `likes_line`, that collapses long lists so a wildly popular post doesn't print a hundred names. It's a pure function, so we test it directly. Add these to the `tests/test_helpers.py` we started when testing messages.
 
@@ -5419,7 +5333,7 @@ def test_likes_line_collapses_over_five():
 
 Four tests walk the helper from nothing to a crowd. With no likers it prints an empty string, so an unliked post shows nothing at all. With one name it links that name and adds "liked this". With a few it joins them with "and", each name a link to that person's profile. And once we pass five, it collapses to "first few names and 4 other people", tucking the rest into a hidden `likers-full` list that the page can reveal on click. That last test is the one that protects us, because the collapsing math is exactly the kind of off-by-one that slips through by eye.
 
-[Save the file](https://fmze.co/fftq-5.13.19).
+[Save the file](https://fmze.co/fftq-5.13.18).
 
 ## Testing the Live Feed <!-- 5.14 -->
 

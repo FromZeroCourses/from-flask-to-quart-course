@@ -4760,7 +4760,7 @@ Two pieces of behaviour are still missing, and they have something in common. Th
   }
 ```
 
-This is a deliberate port of the `linkify` we wrote in Python, and the porting is the point. A post that arrives over SSE goes through the browser, and a post that arrives on a page load goes through Jinja. If the two disagree about how a URL is rendered, the same post looks different depending on how you happened to receive it, and refreshing the page silently changes it. Same rule, both sides.
+This is a deliberate port of the `linkify` we wrote in Python, and the porting is the point. A post that arrives over SSE is built by this file, and a post that arrives with the rest of the page is built by Jinja. If the two disagree about how a URL is rendered, the same post ends up with two different appearances depending on which path delivered it, and neither one is wrong enough to notice quickly. Same rule, both sides.
 
 Now the likes line, which is the same argument again:
 

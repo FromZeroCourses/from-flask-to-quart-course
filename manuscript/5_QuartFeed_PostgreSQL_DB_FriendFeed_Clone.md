@@ -3286,21 +3286,10 @@ One required text field with a sane length cap, exactly like our post form.
 
 [Save the file](https://fmze.co/fftq-5.12.1.1).
 
-Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why: "Robert Scoble commented on this". So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, and give the table a comment header that captures the two routes into a feed, because six months from now this table is the one you'll have to re-derive in your head:
+Now for bubbling, and this is where the feed table needs two new columns. When a post appears in your feed because a friend commented on it, we want to show why, with the card saying who commented on it. So the feed row needs to record the reason. Update `feed_table` in `post/models.py`, adding three lines at the bottom of the table, right above its closing parenthesis. The highlighted lines are the new ones:
 
 {lang=python,line-numbers=on,starting-line-number=26}
 ```
-# Fan-out table: when a user posts, one feed row is inserted for every
-# follower of that user AND for the user themselves. feed.user_id is the
-# feed OWNER (the recipient), not the author.
-#
-# A post also surfaces ("bubbles") into your feed when someone you follow
-# comments on it, even if you don't follow the author. reason_user_id /
-# reason_type record WHY the post is in your feed so the card can show
-# "(Robert Scoble commented on this)". A direct follow leaves them NULL.
-#
-# UNIQUE(user_id, post_id): a post appears at most once per feed. Following
-# the author AND having a followee comment on it must not double-insert.
 feed_table = Table(
     "feed",
     metadata,
@@ -3308,9 +3297,11 @@ feed_table = Table(
     Column("user_id", Integer, ForeignKey("user.id"), nullable=False),
     Column("post_id", Integer, ForeignKey("post.id"), nullable=False),
     Column("updated", DateTime(timezone=True), server_default=func.now()),
+# markua-start-insert
     Column("reason_user_id", Integer, ForeignKey("user.id"), nullable=True),
     Column("reason_type", String(16), nullable=True),  # e.g. "comment"
     UniqueConstraint("user_id", "post_id", name="uq_feed_user_post"),
+# markua-end-insert
 )
 ```
 
@@ -3343,33 +3334,28 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "comment
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Rewrite `post/feed_ops.py`:
+Now that a post can arrive by two routes, our simple "insert a feed row" isn't safe anymore. We need it to insert if the row is new, but just refresh the timestamp if it already exists. Postgres has exactly that: an upsert. Open `post/feed_ops.py`. Three things happen here, and they're the highlighted regions: the imports change, `add_to_feed` learns the two reason columns and becomes an upsert, and a new `bubble_post` joins at the bottom. `fan_out_post` stays exactly as it is:
+
+![One insert, two outcomes: a brand new feed row, or an on conflict update that bumps the timestamp and floats the post back to the top.](images/5.12-scene6-img1.png)
 
 {lang=python,line-numbers=on}
 ```
-"""Operations on the ``feed`` table.
+# markua-start-delete
+from typing import Iterable
 
-The ``feed`` table is the materialized per-user timeline. Two things put a post
-in your feed:
-
-1. Fan-out — when someone you follow (or you) posts, the post lands directly in
-   your feed (no attribution).
-2. Bubbling — when someone you follow comments on a post, that post surfaces in
-   your feed even if you don't follow the author, tagged with the reason
-   ("<name> commented on this").
-
-UNIQUE(user_id, post_id) guarantees a post appears at most once per feed, so a
-post you'd get from both routes is de-duplicated. On a conflict we bump
-``updated`` so fresh activity floats the post back to the top.
-"""
+from sqlalchemy import insert
+# markua-end-delete
+# markua-start-insert
 from typing import Iterable, Optional
 
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+# markua-end-insert
 
 from post.models import feed_table
 
 
+# markua-start-insert
 async def add_to_feed(
     conn,
     user_id: int,
@@ -3389,14 +3375,16 @@ async def add_to_feed(
         set_={"updated": func.now()},
     )
     await conn.execute(stmt)
+# markua-end-insert
 
 
 async def fan_out_post(conn, post_id: int, recipient_ids: Iterable[int]) -> None:
-    """A brand-new post lands directly in the author's + followers' feeds."""
+    """A brand-new post lands directly in the author's and followers' feeds."""
     for user_id in set(recipient_ids):
         await add_to_feed(conn, user_id, post_id)
 
 
+# markua-start-insert
 async def bubble_post(
     conn,
     post_id: int,
@@ -3407,11 +3395,12 @@ async def bubble_post(
     """Surface an existing post into more feeds because someone engaged with it."""
     for user_id in set(recipient_ids):
         await add_to_feed(conn, user_id, post_id, reason_user_id, reason_type)
+# markua-end-insert
 ```
 
-We switch to Postgres's own `insert` so we can chain `on_conflict_do_update`. Now if a feed row for this user and post already exists, instead of failing on the unique constraint, we bump its `updated` timestamp, which floats the post back to the top. That's exactly what we want: fresh activity, no duplicates.
+The new `add_to_feed` does the whole job in one shape: it accepts the two optional reason arguments, and it builds the row with Postgres's own `insert` so we can chain `on_conflict_do_update`. If a feed row for this user and post already exists, instead of failing on the unique constraint we just bump its `updated` timestamp, which floats the post back to the top. Fresh activity, no duplicates.
 
-`fan_out_post` is unchanged in spirit, and the new `bubble_post` is its sibling: it adds a post to feeds and records the reason it bubbled. Same machinery, one carries attribution.
+`fan_out_post` is untouched, and the new `bubble_post` is its sibling: it pushes a post into feeds the same way, and it records who caused it and why. However a post reaches a feed from now on, it lands through this one safe upsert.
 
 [Save the file](https://fmze.co/fftq-5.12.4).
 
@@ -3460,7 +3449,11 @@ async def build_post_payload(
     }
 ```
 
-It joins the post to its author, shapes the same dictionary the browser already knows how to render, and takes two optional reason arguments. A plain new post passes neither; a bubbled post arrives tagged with who commented.
+The signature takes the connection and a post id, plus two optional reason arguments, and both of those default to nothing.
+
+The body joins the post to its author in a single query, so one round trip gives us the message, when it was created, and the username and avatar image of whoever wrote it. We only need the one row.
+
+Then we shape the same dictionary the browser already knows how to render, with the permalink, the avatar URL, the attached images, and the two reason fields at the end. A brand-new post leaves those empty, while a bubbled post arrives tagged with who commented.
 
 [Save the file](https://fmze.co/fftq-5.12.5).
 
@@ -3509,9 +3502,6 @@ async def _load_feed(
     conn: Any, user_id: int, offset: int = 0, limit: int = 10
 ) -> List[Dict[str, Any]]:
     """A page of feed rows for ``user_id``, each with its comments preloaded."""
-    # Alias the user table a second time to resolve the "reason" user (whoever
-    # bubbled the post into this feed via a comment), via an OUTER join since a
-    # directly-followed post has no reason.
     reason_user = user_table.alias("reason_user")
     feed_query = (
         select(
@@ -3568,16 +3558,12 @@ One thing quietly disappeared: the permalink. `url_for` only works inside a requ
 
 Two routes need small updates to match. The `feed` route now builds a form, because the comment box on every card needs a CSRF token to submit. And the permalink page should show a post's comments too, so it loads through the same machinery. Update both, and add the single-post loader they share:
 
-{lang=python,line-numbers=on,starting-line-number=177}
+{lang=python,line-numbers=on,starting-line-number=174}
 ```
 async def _load_single_post_by_uid(
     conn: Any, uid: str, viewer_user_id: int
 ) -> Optional[Dict[str, Any]]:
-    """Load ONE post by its permalink uid (any post, not restricted to the feed).
-
-    Returns the same dict shape as ``_load_feed``'s items so the shared card
-    partial renders it unchanged, or ``None`` if the post does not exist.
-    """
+    """Load one post by permalink uid, in the same dict shape as ``_load_feed``'s."""
     row = (
         await conn.execute(
             select(
@@ -3614,7 +3600,7 @@ async def _load_single_post_by_uid(
 
 Then replace the `feed` and `detail` routes:
 
-{lang=python,line-numbers=on,starting-line-number=232}
+{lang=python,line-numbers=on,starting-line-number=225}
 ```
 @post_app.route("/feed")
 @login_required
@@ -3637,12 +3623,7 @@ async def feed():
 @post_app.route("/post/<uid>/<slug>")
 @login_required
 async def detail(uid: str, slug: Optional[str] = None):
-    """SEO permalink page for a single post: /post/<uid>/<slug>.
-
-    The post is looked up by its opaque ``uid``; the ``slug`` is cosmetic. If
-    the slug in the URL is missing or stale, redirect to the canonical URL so
-    every post has one address search engines can index.
-    """
+    """SEO permalink page; a missing or stale slug 301-redirects to the canonical URL."""
     form = await PostForm.create_form()
     engine = current_app.dbc  # type: ignore
     async with engine.begin() as conn:
@@ -3714,9 +3695,7 @@ async def create_comment(post_id: int):
                 )
             ).fetchone()
 
-            # Bubble the post into the feeds of my followers (and mine), so a
-            # post I comment on surfaces for the people who follow me — even if
-            # they don't follow its author — tagged "<me> commented on this".
+            # Bubble into my followers' feeds (and mine): "<me> commented on this".
             follower_ids = await followers(conn, session["user_id"])
             bubble_recipients = set(follower_ids)
             bubble_recipients.add(session["user_id"])
@@ -3729,11 +3708,9 @@ We insert the comment, read it back along with its author, then bubble the post 
 
 Now the live half, still inside the same `with` block and then just after it:
 
-{lang=python,line-numbers=on,starting-line-number=57}
+{lang=python,line-numbers=on,starting-line-number=55}
 ```
-            # The recipients are exactly the users who have this post in their
-            # feed (now including the just-bubbled ones), so the live comment
-            # reaches the same pages showing the post.
+            # Everyone with this post in their feed gets the live comment.
             recipient_ids = [
                 r.user_id
                 for r in (
@@ -3745,15 +3722,12 @@ Now the live half, still inside the same `with` block and then just after it:
                 ).fetchall()
             ]
 
-            # Payload to push the post itself to my followers so it shows in
-            # their feed live (not only on refresh), tagged with the reason.
+            # The bubbled post's payload, tagged with who commented and why.
             bubble_payload = await build_post_payload(
                 conn, post_id, "comment", author.username
             )
 
-        # Push the post to my followers first — this creates the card live if
-        # they don't already have it — then send the comment to everyone who has
-        # the post in their feed.
+        # Push the post to followers first, then the comment to everyone holding it.
         if follower_ids:
             await broker.publish_many(
                 follower_ids,
@@ -3865,11 +3839,11 @@ The `comment_row` macro keeps each comment's markup in one place, because the ca
 
 Finally, the browser side. `broadcast.js` needs to learn three things: the cards it builds live need the same comment form, a bubbled post's card should carry its attribution, and a `comment` event should append to the right card. First, grab a CSRF token near the top, right after the `EventSource` line, by borrowing the one already rendered on the page:
 
+![broadcast.js has three things to learn: live cards need the same comment form, a bubbled post's card carries its attribution, and a comment event appends to the right card.](images/5.12-scene13-img1.png)
+
 {lang=js,line-numbers=on,starting-line-number=7}
 ```
-  // Reuse the CSRF token already rendered on the page (from the post form)
-  // so dynamically-created comment forms for posts that arrived over
-  // SSE still submit successfully.
+  // Reuse the page's rendered CSRF token so SSE-built comment forms can submit.
   const csrfInput = document.querySelector('#post-form input[name="csrf_token"]');
   const csrfToken = csrfInput ? csrfInput.value : "";
 ```
@@ -3883,7 +3857,7 @@ For that selector to find anything, the post form needs the id. In `templates/po
 
 Back in `broadcast.js`, update the card template inside the `post` listener: the attribution span after the author link, and the comments container plus the form after the timestamp line:
 
-{lang=js,line-numbers=on,starting-line-number=37}
+{lang=js,line-numbers=on,starting-line-number=35}
 ```
             <a href="/user/${encodeURIComponent(post.author_username)}" class="fw-bold">@${escapeHtml(post.author_username)}</a>
             ${(post.reason_type === "comment" && post.reason_username)
@@ -3906,7 +3880,7 @@ Back in `broadcast.js`, update the card template inside the `post` listener: the
 
 And add the `comment` listener after the `post` one: find the card by its post id, and append the comment in the same shape the template macro renders:
 
-{lang=js,line-numbers=on,starting-line-number=60}
+{lang=js,line-numbers=on,starting-line-number=58}
 ```
   es.addEventListener("comment", (e) => {
     const comment = JSON.parse(e.data);
@@ -3923,13 +3897,17 @@ And add the `comment` listener after the `post` one: find the card by its post i
 
 [Save the file](https://fmze.co/fftq-5.12.11).
 
-Restart, open two browsers, and comment from one. The comment appears under the post on every feed showing it, and if your follower didn't have the post at all, the whole card slides in first, tagged with who commented, live.
+Let's watch it work. Restart the app, open two browser windows side by side, and log in as jorge on the left and marta on the right.
 
-[Save the file](https://fmze.co/fftq-5.12.11).
+From jorge's window, type a comment on the top post and send it. Marta already has that post in her feed.
+
+The comment appears under it in her window right away, with no refresh. Now comment on a post she doesn't have at all.
+
+The whole card slides into her feed first, tagged with who commented on it, live.
 
 ### Testing comments and bubbling <!--  -->
 
-Comments do more than attach text to a post; commenting bubbles that post into the feeds of the people who follow you, even if they don't follow the original author. That bubbling is subtle logic, so it's worth testing carefully. Two quick tests cover the basics, then two more prove the bubbling actually works.
+Comments do more than attach text to a post. Commenting bubbles that post into the feeds of the people who follow you, even if they don't follow the original author. That bubbling is subtle logic, so it's worth testing carefully. Three quick tests cover the basics, then four more prove the bubbling actually works.
 
 First, the now-familiar one-line update to `conftest.py`: we just added the `comment` table, so register its model so the test database builds it.
 
@@ -4149,6 +4127,8 @@ The first test tells the whole bubbling story. The viewer follows the commenter 
 
 Bubbling isn't only about the database; it also pushes live. When someone you follow comments on a post you've never seen, that post should slide into your open feed over SSE without a refresh. Add this test to `test_feed.py`. It uses the broker directly to capture what a viewer's live connection would receive.
 
+![A comment on a post you have never seen publishes a live post event through the broker, so the card slides into your open feed with no refresh.](images/5.12-scene19-img1.png)
+
 {lang=python,line-numbers=on,starting-line-number=129}
 ```
 @pytest.mark.asyncio
@@ -4185,7 +4165,9 @@ async def test_comment_live_bubbles_post_over_sse(create_test_app):
     assert data["reason_username"] == "commenter"
 ```
 
-Here we subscribe to the broker as the viewer, exactly like a real browser opening its `EventSource` connection, then have the commenter comment. We drain the queue and look for a "post" event, because the whole point is that the post itself arrives live so the card can appear on the viewer's page. We check its payload carries the post id and the "commenter commented on this" attribution. The `try/finally` matters: we always unsubscribe so a leftover queue can't bleed into another test. Run `pytest` and watch comments, bubbling, and the live push all pass.
+Here we subscribe to the broker as the viewer, exactly like a real browser opening its `EventSource` connection, then have the commenter comment. We drain the queue and look for a "post" event, because the whole point is that the post itself arrives live so the card can appear on the viewer's page. We check its payload carries the post id and the "commenter commented on this" attribution. The `try/finally` matters: we always unsubscribe so a leftover queue can't bleed into another test.
+
+Run `pytest` inside the container. Give it a moment while everything spins up and the suite works its way through every feed test we have written so far. There it is: comments, bubbling, and the live push over SSE, all passing in one run.
 
 [Save the file](https://fmze.co/fftq-5.12.15).
 
@@ -4193,7 +4175,9 @@ Here we subscribe to the broker as the viewer, exactly like a real browser openi
 
 The last piece of engagement is the like, and it teaches one more idea: making an action idempotent, so clicking Like and Unlike can be the same button toggling on and off, with the database keeping things consistent.
 
-The model uses a unique constraint to enforce that. Create a `like` folder with an empty `__init__.py` and `models.py`:
+Once likes are in, the feed finally has everything FriendFeed had, and that is a good moment to stop and make it look like FriendFeed too. So this lesson has two halves. First we build the like, from the table up to the live event. Then we give the feed the skin it deserves: the blue title bar, the action row under each post, relative timestamps, and the collapsing "who liked this" line that made the original site so readable.
+
+The model uses a unique constraint to enforce one like per person per post. Create a `like` folder with an empty `__init__.py` and `models.py`:
 
 {lang=python,line-numbers=on}
 ```
@@ -4213,7 +4197,29 @@ like_table = Table(
 
 The unique constraint on `post_id` and `user_id` guarantees one like per person per post. You can't accidentally like the same post twice, and that makes a like a clean on-off toggle rather than a counter we have to babysit.
 
-[Save the file](https://fmze.co/fftq-5.13.1) and migrate as usual, remembering to import the model in `migrations/env.py`.
+[Save the file](https://fmze.co/fftq-5.13.1).
+
+Same easy-to-forget step as last time: Alembic only knows about the tables whose models `migrations/env.py` imports, so add the new one under the others.
+
+{lang=python,line-numbers=on,starting-line-number=16}
+```
+from user.models import user_table  # noqa: F401
+from relationship.models import relationship_table  # noqa: F401
+from post.models import post_table, post_image_table  # noqa: F401
+from comment.models import comment_table  # noqa: F401
+# markua-start-insert
+from like.models import like_table  # noqa: F401
+# markua-end-insert
+```
+
+[Save the file](https://fmze.co/fftq-5.13.2). Then rebuild the web image and let Alembic write and apply the revision:
+
+{lang=bash,line-numbers=off}
+```
+$ docker compose build web
+$ docker compose run --rm web uv run alembic revision --autogenerate -m "create like table"
+$ docker compose run --rm web uv run alembic upgrade head
+```
 
 Now the toggle view. Create `like/views.py`:
 
@@ -4235,7 +4241,7 @@ like_app = Blueprint("like_app", __name__)
 
 
 class LikeForm(QuartForm):
-    """CSRF-only form for the like toggle POST."""
+    """CSRF-only form used for the like/unlike toggle POST (no visible fields)."""
 
 
 @like_app.route("/like/<int:post_id>", methods=["POST"])
@@ -4261,14 +4267,33 @@ async def toggle_like(post_id: int):
                 await conn.execute(
                     insert(like_table).values(post_id=post_id, user_id=session["user_id"])
                 )
+```
 
+That is the whole idea of the lesson in nine lines. We look for an existing like from this user on this post. If there is one we delete it, and if there isn't we insert one. The same button, the same route, both directions. Nothing anywhere has to know whether it is "liking" or "unliking", and clicking twice quickly can't leave a mess behind, because the unique constraint means there was never more than one row to begin with.
+
+Now the second half of the view, still inside that `async with` block. Having toggled, we need to tell the page what the likes look like now:
+
+{lang=python,line-numbers=on,starting-line-number=44}
+```
+            like_count = (
+                await conn.execute(
+                    select(func.count())
+                    .select_from(like_table)
+                    .where(like_table.c.post_id == post_id)
+                )
+            ).scalar_one()
+
+            # Names of everyone who likes the post now, so the "A, B and N
+            # other people liked this" line can re-render live.
             likers = [
                 r.username
                 for r in (
                     await conn.execute(
                         select(user_table.c.username)
                         .select_from(
-                            like_table.join(user_table, like_table.c.user_id == user_table.c.id)
+                            like_table.join(
+                                user_table, like_table.c.user_id == user_table.c.id
+                            )
                         )
                         .where(like_table.c.post_id == post_id)
                         .order_by(like_table.c.id.asc())
@@ -4276,53 +4301,923 @@ async def toggle_like(post_id: int):
                 ).fetchall()
             ]
 
-            feed_owner_ids = [
+            # Deliver the updated count only to pages that have this post
+            # (i.e. the users whose feed contains it), not every open page.
+            recipient_ids = [
                 r.user_id
                 for r in (
                     await conn.execute(
-                        select(feed_table.c.user_id).where(feed_table.c.post_id == post_id)
+                        select(feed_table.c.user_id).where(
+                            feed_table.c.post_id == post_id
+                        )
                     )
                 ).fetchall()
             ]
 
         await broker.publish_many(
-            feed_owner_ids,
+            recipient_ids,
             ServerSentEvent(
                 event="like",
-                data=json.dumps({"post_id": post_id, "likers": likers}),
+                data=json.dumps(
+                    {"post_id": post_id, "like_count": like_count, "likers": likers}
+                ),
             ),
         )
 
     return redirect(url_for("post_app.home"))
 ```
 
-It's a toggle. We look for an existing like from this user on this post. If there is one, we delete it; if not, we insert one. The same button, the same route, both directions. Then we gather the current list of likers, newest activity aside, ordered by when they liked.
+We count the likes, then gather the likers' names in the order they liked, joining `like` to `user` to turn ids into usernames. The `recipient_ids` query is the same targeted delivery we built for comments: we ask the `feed` table who actually has this post, and we push the event only to them. A like is not news to someone who can't see the post.
 
-Finally we push a `like` event to everyone who has the post in their feed, carrying the updated list of names so their pages can re-render the likes line live. Same targeted delivery as comments.
+[Save the file](https://fmze.co/fftq-5.13.3).
 
-[Save the file](https://fmze.co/fftq-5.13.2).
+Like every blueprint before it, this one has to be registered, and while we are in `application.py` there are two more small things to add. Start at the top. The templates are about to want `likes_line`, and we need `random` for a cache buster in a moment:
 
-FriendFeed had a nice touch: instead of a bare count, it wrote out "Alice, Bob and Carol liked this", and collapsed the list once it got long. Let's build that line as a helper in `utils/helpers.py`:
-
-{lang=python,line-numbers=on,starting-line-number=60}
+{lang=python,line-numbers=on,starting-line-number=1}
 ```
-def likes_line(likers, head: int = 3, collapse_over: int = 5) -> str:
-    n = len(likers)
+# markua-start-insert
+import random
+
+# markua-end-insert
+from quart import Quart, url_for
+
+from db import get_engine
+# markua-start-insert
+from utils.helpers import likes_line, linkify, slugify
+# markua-end-insert
+```
+
+Then the blueprint itself, alongside the others:
+
+{lang=python,line-numbers=on,starting-line-number=16}
+```
+    from user.views import user_app
+    from relationship.views import relationship_app
+    from post.views import post_app
+    from comment.views import comment_app
+# markua-start-insert
+    from like.views import like_app
+# markua-end-insert
+
+    app.register_blueprint(user_app)
+    app.register_blueprint(relationship_app)
+    app.register_blueprint(post_app)
+    app.register_blueprint(comment_app)
+# markua-start-insert
+    app.register_blueprint(like_app)
+# markua-end-insert
+```
+
+Now that cache buster. We are about to write a stylesheet and two JavaScript files, and browsers cache those aggressively, which makes editing them maddening. A context processor hands every template a fresh random number on every request:
+
+{lang=python,line-numbers=on,starting-line-number=28}
+```
+    @app.context_processor
+    def inject_cache_buster():
+        # A fresh value every request. Appended to static asset URLs as
+        # ?cb=<n> so reloading the page always re-fetches the current JS/CSS
+        # instead of a stale browser-cached copy.
+        return {"cb": random.randint(0, 2**31 - 1)}
+```
+
+We'll append `?cb={{ cb }}` to our own script and stylesheet tags shortly, so a reload always fetches what is actually on disk.
+
+Last, hand `likes_line` to the templates, next to the `linkify` filter:
+
+{lang=python,line-numbers=on,starting-line-number=40}
+```
+# markua-start-insert
+    app.add_template_global(likes_line, "likes_line")
+# markua-end-insert
+    app.add_template_filter(linkify, "linkify")
+```
+
+A filter and a global are two ways of exposing the same kind of function to Jinja. A filter reads well when it transforms one value, as in `post.message | linkify`. A global reads better when the function is really a small renderer we call by name, as in `likes_line(post.likers)`, so that is the shape we use here.
+
+[Save the file](https://fmze.co/fftq-5.13.4).
+
+Now the line itself. FriendFeed had a nice touch: instead of a bare count it wrote out "Alice, Bob and Carol liked this", and collapsed the list once it got long. Open `utils/helpers.py`. We need two more imports, a `List` for the signature and `quote` to build safe profile URLs:
+
+![Five likers or fewer are written out in full; past that the line collapses to the first three plus an expandable link, with both spans already in the HTML.](images/5.13-scene6-img1.png)
+
+{lang=python,line-numbers=on,starting-line-number=1}
+```
+import os
+import re
+from functools import wraps
+# markua-start-insert
+from typing import Any, Callable, List, Optional
+from urllib.parse import quote
+# markua-end-insert
+```
+
+Then add the helper below `post_image_url`:
+
+{lang=python,line-numbers=on,starting-line-number=68}
+```
+def _profile_link(name: str) -> str:
+    """A profile link for a username: <a href="/user/name">name</a>."""
+    return f'<a href="/user/{quote(str(name), safe="")}">{escape(name)}</a>'
+
+
+def likes_line(likers: List[str], head: int = 3, collapse_over: int = 5) -> Markup:
+    """FriendFeed-style "A, B and C liked this" line, names linked to profiles.
+
+    Up to ``collapse_over`` names are listed in full; beyond that the first
+    ``head`` are shown followed by an expandable "N other people" link.
+    """
+    names = [_profile_link(name) for name in likers]
+    n = len(names)
     if n == 0:
-        return ""
+        return Markup("")
+
+    emoji = '<span class="likes-emoji">\U0001f642</span> '
     if n <= collapse_over:
         if n == 1:
-            return f"{likers[0]} liked this"
-        return ", ".join(likers[:-1]) + f" and {likers[-1]} liked this"
-    shown = ", ".join(likers[:head])
-    return f"{shown} and {n - head} other people liked this"
+            body = f"{names[0]} liked this"
+        else:
+            body = ", ".join(names[:-1]) + f" and {names[-1]} liked this"
+        return Markup(emoji + body)
+
+    shown = ", ".join(names[:head])
+    others = n - head
+    full = ", ".join(names)
+    collapsed = (
+        f'<span class="likers-collapsed">{shown} and '
+        f'<a href="#" class="likers-more">{others} other people</a> liked this</span>'
+    )
+    expanded = f'<span class="likers-full d-none">{full} liked this</span>'
+    return Markup(emoji + collapsed + expanded)
 ```
 
-If nobody liked it, we show nothing. Up to five names, we list them all with a natural "and" before the last. Beyond that, we show the first three and collapse the rest into "and N other people liked this", so a wildly popular post doesn't print a hundred names. Render this line under each post, and add a `like` listener to `broadcast.js` that replaces it when a like event arrives.
+Read it from the top. Every name becomes a profile link first, and `escape(name)` inside `_profile_link` is what lets us return `Markup` at the end without opening an injection hole: the only unescaped HTML in the result is HTML we wrote ourselves. If nobody liked the post we return an empty `Markup`, so the line renders as nothing at all rather than an empty bullet.
 
-[Save the file](https://fmze.co/fftq-5.13.3). Restart and try it. Like a post and the line updates; like it from another account and watch the names change live on the first. Unlike and it ticks back down. QuartFeed is now a complete, real-time social feed. All that's left is to make sure it stays that way.
+Up to five names we list them all, with a natural "and" before the last one. Past five we build two spans instead of one: a `likers-collapsed` span showing the first three plus an "N other people" link, and a `likers-full` span carrying every name, hidden with Bootstrap's `d-none`. Both are in the HTML from the start, so revealing the full list later is a class change in the browser and not another request.
 
-### Testing likes <!-- 5.13.1 -->
+[Save the file](https://fmze.co/fftq-5.13.5).
+
+The template can call `likes_line`, but nothing is loading the likers yet. Open `post/views.py` and import the new model:
+
+{lang=python,line-numbers=on,starting-line-number=19}
+```
+from comment.models import comment_table
+# markua-start-insert
+from like.models import like_table
+# markua-end-insert
+```
+
+Then teach `_post_extras` about likes. It already gathers a post's comments and images for one viewer, which is exactly the right place: the likers list, and whether this particular viewer has liked it, are per-post-per-viewer facts too.
+
+{lang=python,line-numbers=on,starting-line-number=117}
+```
+# markua-start-insert
+    # Usernames of everyone who liked, oldest-first, drives the FriendFeed
+    # "alice, bob and N other people liked this" line.
+    liker_rows = (
+        await conn.execute(
+            select(user_table.c.username)
+            .select_from(
+                like_table.join(user_table, like_table.c.user_id == user_table.c.id)
+            )
+            .where(like_table.c.post_id == post_id)
+            .order_by(like_table.c.id.asc())
+        )
+    ).fetchall()
+    likers = [row.username for row in liker_rows]
+
+    liked_by_me = (
+        await conn.execute(
+            select(like_table).where(
+                (like_table.c.post_id == post_id) & (like_table.c.user_id == user_id)
+            )
+        )
+    ).fetchone() is not None
+
+# markua-end-insert
+    return {
+        "comments": comment_rows,
+        "images": await _post_images(conn, post_id),
+# markua-start-insert
+        "likers": likers,
+        "like_count": len(likers),
+        "liked_by_me": liked_by_me,
+# markua-end-insert
+    }
+```
+
+The first query is the same join the view used, so the server-rendered line and the live one agree by construction. `liked_by_me` is the one that makes the button honest: it is a single lookup for this viewer's own row, and it decides whether the button says Like or Unlike. Without it, someone who has already liked a post would still be invited to like it again.
+
+[Save the file](https://fmze.co/fftq-5.13.6).
+
+That is the like feature, end to end on the server. Now the look.
+
+![Each part of the FriendFeed look maps to one class the stylesheet targets: the wordmark, the blue column bar, the white entry card, the two type sizes, and the row of text links under every post.](images/5.13-scene8-img1.png)
+
+Everything we have built renders through Bootstrap's defaults, which is fine but generic. FriendFeed had a specific, recognizable style: a soft blue-grey page, white entries with thin borders, a blue title bar over the column, and a row of small text links under each post reading "time - Comment - Like". Almost none of that needs new markup. It needs a stylesheet.
+
+This is not a CSS course, so we are not going to walk through it rule by rule. Create `static/css/friendfeed.css` with the styles below, which give us the FriendFeed skin and the Like control:
+
+{lang=css,line-numbers=on}
+```
+/* FriendFeed-flavored skin for QuartFeed (circa 2009 look). */
+:root {
+    --ff-blue: #2b5ba8;
+    --ff-blue-light: #3f6cbf;
+    --ff-border: #d3dae6;
+    --ff-muted: #8a94a6;
+    --ff-page: #e9eef5;
+}
+
+body {
+    background: var(--ff-page);
+    color: #1a1a1a;
+}
+
+/* Top bar with the wordmark */
+.navbar {
+    background: #fff !important;
+    border-bottom: 1px solid var(--ff-border);
+}
+.navbar-brand {
+    color: var(--ff-blue) !important;
+    font-weight: 800;
+    font-size: 1.7rem;
+    letter-spacing: -0.5px;
+}
+
+/* Blue "Home" title bar over the feed column */
+.ff-bar {
+    background: linear-gradient(var(--ff-blue-light), var(--ff-blue));
+    color: #fff;
+    font-weight: 700;
+    padding: 7px 14px;
+    border-radius: 6px 6px 0 0;
+    font-size: 0.95rem;
+}
+
+/* Entries: white cards with thin borders, no heavy shadow */
+.card {
+    border: 1px solid var(--ff-border);
+    box-shadow: none;
+}
+
+/* Font hierarchy: the author + post text read larger than the meta/likes/
+   comments below them. */
+.entry-author {
+    font-size: 1.02rem;
+}
+.entry-text {
+    font-size: 1.08rem;
+    line-height: 1.35;
+}
+.card a.fw-bold {
+    color: var(--ff-blue);
+    text-decoration: none;
+}
+.card a.fw-bold:hover {
+    text-decoration: underline;
+}
+
+a {
+    color: var(--ff-blue);
+}
+
+/* Likes + comments */
+.likes-emoji {
+    font-size: 0.95rem;
+}
+.comment-bubble {
+    color: #9aa7bd;
+}
+.comment {
+    margin-bottom: 2px;
+}
+.likers-more,
+.comments-more {
+    color: var(--ff-blue);
+    cursor: pointer;
+    text-decoration: none;
+}
+.likers-more:hover,
+.comments-more:hover {
+    text-decoration: underline;
+}
+
+time.timeago {
+    color: var(--ff-muted);
+}
+
+/* FriendFeed action row: "time - Comment - Like - Hide" as text links */
+.ff-meta a,
+.ff-action-link {
+    color: var(--ff-blue);
+    text-decoration: none;
+}
+.ff-meta a:hover,
+.ff-action-link:hover {
+    text-decoration: underline;
+}
+.ff-meta .ff-meta-time,
+.ff-meta .ff-meta-time time {
+    color: var(--ff-muted);
+}
+/* Submit button styled as a plain inline text link */
+.ff-action-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+    vertical-align: baseline;
+}
+```
+
+One rule in there is worth a second look, though, because it is not really about looks. Liking is a state change, so it has to be a form POST carrying a CSRF token, which means the control has to be a real `<button>` and not a link. But visually it belongs in a row of text links. So `.ff-action-link` strips the button back to nothing: no background, no border, no padding, inherit the font, sit on the text baseline like its neighbours. That is how you get correct, secure HTML that still looks like the design, instead of a link pretending to be a button and losing CSRF protection on the way.
+
+[Save the file](https://fmze.co/fftq-5.13.7).
+
+Two pieces of behaviour are still missing, and they have something in common. The likes line collapses past five names, so something has to expand it. And when a like arrives over SSE, the browser has to rebuild that line itself, in exactly the shape `likes_line` produces on the server. Create `static/js/interactions.js`:
+
+{lang=js,line-numbers=on}
+```
+// FriendFeed-style feed interactions: expandable likes/comments, URL
+// linkifying, and relative timestamps. Exposes window.linkify /
+// window.renderLikesLine / window.formatTimeago so the SSE client
+// (broadcast.js) renders dynamically-inserted cards identically to the server.
+(function () {
+  "use strict";
+
+  function esc(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[c];
+    });
+  }
+
+  // Escape text and turn bare http(s) URLs into truncated links.
+  function linkify(text, maxLen) {
+    maxLen = maxLen || 40;
+    var re = /(https?:\/\/[^\s<]+)/g;
+    var out = "";
+    var last = 0;
+    var m;
+    while ((m = re.exec(text)) !== null) {
+      out += esc(text.slice(last, m.index));
+      var url = m[0];
+      var display = url.length <= maxLen ? url : url.slice(0, maxLen - 1) + "…";
+      out +=
+        '<a href="' + esc(url) + '" target="_blank" rel="noopener">' +
+        esc(display) +
+        "</a>";
+      last = m.index + url.length;
+    }
+    out += esc(text.slice(last));
+    return out;
+  }
+```
+
+This is a deliberate port of the `linkify` we wrote in Python, and the porting is the point. A post that arrives over SSE is built by this file, and a post that arrives with the rest of the page is built by Jinja. If the two disagree about how a URL is rendered, the same post ends up with two different appearances depending on which path delivered it, and neither one is wrong enough to notice quickly. Same rule, both sides.
+
+Now the likes line, which is the same argument again, plus the timestamps:
+
+{lang=js,line-numbers=on,starting-line-number=41}
+```
+  // Build the "A, B and C liked this" line (mirrors helpers.likes_line).
+  function renderLikesLine(likers, head, collapseOver) {
+    head = head || 3;
+    collapseOver = collapseOver || 5;
+    if (!likers || !likers.length) return "";
+    var names = likers.map(function (name) {
+      return (
+        '<a href="/user/' + encodeURIComponent(name) + '">' + esc(name) + "</a>"
+      );
+    });
+    var emoji = '<span class="likes-emoji">🙂</span> ';
+    if (names.length <= collapseOver) {
+      var body =
+        names.length === 1
+          ? names[0] + " liked this"
+          : names.slice(0, -1).join(", ") +
+            " and " +
+            names[names.length - 1] +
+            " liked this";
+      return emoji + body;
+    }
+    var shown = names.slice(0, head).join(", ");
+    var others = names.length - head;
+    var full = names.join(", ");
+    return (
+      emoji +
+      '<span class="likers-collapsed">' + shown + " and " +
+      '<a href="#" class="likers-more">' + others + " other people</a> liked this</span>" +
+      '<span class="likers-full d-none">' + full + " liked this</span>"
+    );
+  }
+
+  // Relative timestamps, via the timeago.js library loaded in base.html.
+  // It keeps re-rendering on its own, so each node is registered once.
+  function formatTimeago(root) {
+    timeago.render((root || document).querySelectorAll("time.timeago"));
+  }
+
+  window.linkify = linkify;
+  window.renderLikesLine = renderLikesLine;
+  window.formatTimeago = formatTimeago;
+```
+
+Read `renderLikesLine` side by side with the Python `likes_line` and it is the same function twice: same defaults of three and five, same "and" before the last name, same two spans past the threshold. Keeping a pair like this in step is a real maintenance cost, and it is worth paying only where the two renderers genuinely have to produce identical output. This is one of those places, because a like can update a card that Jinja drew or a card that JavaScript drew, and it must not matter which.
+
+`formatTimeago` is the small one, and it is small on purpose. Every post currently shows an absolute date, which is precise and unhelpful: in a feed you want "2 minutes ago". Writing that yourself means a units table, rounding rules and a refresh timer, which is a lot of date arithmetic for a course about Quart. So we hand it to `timeago.js`, a two-kilobyte library that does exactly this one job, and our whole contribution is passing it the nodes to look after. It re-renders them on its own from then on, so "just now" turns into "a minute ago" without us running a timer.
+
+Finally, one click handler for the whole page, and the first pass over the timestamps:
+
+{lang=js,line-numbers=on,starting-line-number=83}
+```
+  document.addEventListener("click", function (e) {
+    // "Comment" action -> reveal + focus the comment box.
+    var commentLink = e.target.closest(".ff-comment");
+    if (commentLink) {
+      e.preventDefault();
+      var ccard = commentLink.closest(".card");
+      var cform = ccard && ccard.querySelector(".comment-form");
+      if (cform) {
+        cform.classList.remove("d-none");
+        var input = cform.querySelector('input[name="comment"]');
+        if (input) input.focus();
+      }
+      return;
+    }
+
+    // "Add photos" -> reveal the file input and hide the link.
+    var addPhotos = e.target.closest(".add-photos");
+    if (addPhotos) {
+      e.preventDefault();
+      var pform = addPhotos.closest("form");
+      var row = pform && pform.querySelector(".add-photos-row");
+      if (row) row.classList.remove("d-none");
+      addPhotos.classList.add("d-none");
+      return;
+    }
+
+    // Expanders: "N other people" (likes) and "N more comments" (comments).
+    var more = e.target.closest(".likers-more");
+    if (more) {
+      e.preventDefault();
+      var likes = more.closest(".likes");
+      likes.querySelector(".likers-collapsed").classList.add("d-none");
+      likes.querySelector(".likers-full").classList.remove("d-none");
+      return;
+    }
+    var cmore = e.target.closest(".comments-more");
+    if (cmore) {
+      e.preventDefault();
+      var comments = cmore.closest(".comments");
+      var hidden = comments.querySelector(".comments-hidden");
+      if (hidden) hidden.classList.remove("d-none");
+      cmore.closest(".comments-more-wrap").classList.add("d-none");
+    }
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    formatTimeago(document);
+  });
+})();
+```
+
+One listener on `document` handles all four interactions, and that is not laziness. Cards arrive from three directions now: rendered by Jinja on load, appended by infinite scroll, and prepended by SSE. If we attached handlers to each button we would have to re-attach them every time a card appeared, and forgetting once means a dead link with no error. Listening on `document` and asking `e.target.closest(...)` which control was clicked means a card works the moment it exists, no matter who created it.
+
+Expanding the likes is then just swapping which of the two spans carries `d-none`, exactly as `likes_line` set them up.
+
+[Save the file](https://fmze.co/fftq-5.13.8).
+
+Nothing loads any of this yet. Open `templates/base.html` and add the stylesheet after Bootstrap's, so ours wins:
+
+{lang=html,line-numbers=on,starting-line-number=12}
+```
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/friendfeed.css') }}?cb={{ cb }}">
+```
+
+And at the bottom, the `timeago.js` library from a CDN followed by our own script, both after Bootstrap's bundle so the navbar dropdown still works:
+
+{lang=html,line-numbers=on,starting-line-number=26}
+```
+    <script src="https://cdn.jsdelivr.net/npm/timeago.js@4.0.2/dist/timeago.min.js"></script>
+    <script src="{{ url_for('static', filename='js/interactions.js') }}?cb={{ cb }}"></script>
+```
+
+The library has to come first, because `interactions.js` calls `timeago.render` as soon as the page is ready. There is our `?cb={{ cb }}` from the context processor on our own file, and deliberately not on the CDN one: the whole point of a versioned CDN URL is that it is safe to cache forever.
+
+[Save the file](https://fmze.co/fftq-5.13.9).
+
+The navbar is doing very little for us: a dead wordmark and two flat links. Let's make the wordmark go home, collapse the nav properly on a phone, and gather the account links into a dropdown under the username. Replace `templates/navbar.html`:
+
+{lang=html,line-numbers=on}
+```
+<nav class="navbar navbar-expand-lg navbar-light bg-light mb-3">
+    <div class="container-fluid">
+<!-- markua-start-insert -->
+        <a class="navbar-brand" href="{{ url_for('post_app.home') }}">QuartFeed</a>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarNav">
+            <div class="navbar-nav ms-auto">
+                {% if session.username %}
+                <li class="nav-item dropdown list-unstyled">
+                    <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button"
+                        data-bs-toggle="dropdown" aria-expanded="false">
+                        @{{ session.username }}
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                        <li><a class="dropdown-item" href="{{ url_for('user_app.profile', username=session.username) }}">Profile</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('user_app.profile_edit') }}">Edit profile</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{{ url_for('user_app.logout') }}">Logout</a></li>
+                    </ul>
+                </li>
+                {% else %}
+                <a class="nav-link" href="{{ url_for('user_app.login') }}">Login</a>
+                <a class="nav-link" href="{{ url_for('user_app.register') }}">Register</a>
+                {% endif %}
+            </div>
+<!-- markua-end-insert -->
+        </div>
+    </div>
+</nav>
+```
+
+The `navbar-toggler` and the `collapse` wrapper are the Bootstrap pattern for a nav that turns into a hamburger on a narrow screen, and the dropdown is what stops the bar filling up as we add pages. Notice the brand now links to `post_app.home`, so the wordmark behaves the way every wordmark on the web behaves.
+
+[Save the file](https://fmze.co/fftq-5.13.10).
+
+The home page needs the blue title bar, a wider column now that entries carry more, and a composer that matches the rest. Open `templates/post/home.html`. First the column and the bar:
+
+{lang=html,line-numbers=on,starting-line-number=10}
+```
+    <div class="col-md-8 offset-md-2">
+
+        <div class="ff-bar mb-3">Home</div>
+```
+
+The composer stops using the form-field helper, so its import goes:
+
+{lang=html,line-numbers=off}
+```
+<!-- markua-start-delete -->
+        {% from "_formhelpers.html" import render_field %}
+<!-- markua-end-delete -->
+```
+
+Then the composer itself. FriendFeed put the photo control behind a small "Add photos" link rather than showing a file input to everyone, so replace the form's body:
+
+{lang=html,line-numbers=on,starting-line-number=18}
+```
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('post_app.create_post') }}" id="post-form"
+                    enctype="multipart/form-data">
+<!-- markua-start-insert -->
+                    <textarea name="message" class="form-control mb-2" rows="2"
+                        placeholder="What's on your mind?">{{ form.message.data or '' }}</textarea>
+                    <div class="add-photos-row d-none mb-2">
+                        {{ form.image(class="form-control form-control-sm", accept="image/*") }}
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <a href="#" class="add-photos me-3">Add photos</a>
+                        {{ form.csrf_token }}
+                        <button type="submit" class="btn btn-primary">Post</button>
+                    </div>
+<!-- markua-end-insert -->
+                </form>
+            </div>
+        </div>
+```
+
+The file input is still there, still the same `form.image` field, just wrapped in a `d-none` div that the `add-photos` handler in `interactions.js` reveals. We dropped `render_field` for the message in favour of a plain `textarea`, because a two-row box with a placeholder reads like a composer while a labelled form field reads like paperwork. The `{{ form.message.data or '' }}` keeps what you typed if validation sends the page back.
+
+Finally, add the cache buster to the two script tags at the bottom:
+
+{lang=html,line-numbers=on,starting-line-number=51}
+```
+<script src="{{ url_for('static', filename='js/broadcast.js') }}?cb={{ cb }}"></script>
+<script src="{{ url_for('static', filename='js/infinite_scroll.js') }}?cb={{ cb }}"></script>
+```
+
+[Save the file](https://fmze.co/fftq-5.13.11).
+
+Now the card itself, which is where all of this comes together. Open `templates/post/_post_card.html`. The author line and the post text pick up the two type classes, and every avatar gets a fallback for a broken image:
+
+{lang=html,line-numbers=on,starting-line-number=8}
+```
+        <div class="d-flex">
+<!-- markua-start-insert -->
+            <img src="{{ post.avatar_url }}" class="rounded-circle me-2 flex-shrink-0" width="40" height="40" alt="avatar" onerror="this.onerror=null;this.src='/static/default_profile.png';">
+<!-- markua-end-insert -->
+            <div class="flex-grow-1">
+<!-- markua-start-insert -->
+                <a href="{{ url_for('user_app.profile', username=post.author_username) }}" class="fw-bold entry-author">@{{ post.author_username }}</a>
+<!-- markua-end-insert -->
+```
+
+That `onerror` sets itself to `null` first, which matters: if the fallback image were also missing, the handler would fire again on its own replacement and loop forever.
+
+Next, the action row replacing the bare timestamp link, and the likes line under it:
+
+{lang=html,line-numbers=on,starting-line-number=24}
+```
+                <div class="ff-meta small text-muted mt-1">
+                    <a href="{{ post_url(post.uid, post.message) }}" class="ff-meta-time">
+                        <time class="timeago" datetime="{{ post.created.isoformat() }}">{{ post.created.strftime('%b %d, %Y %H:%M') }}</time>
+                    </a>
+                    - <a href="#" class="ff-comment">Comment</a>
+                    -
+                    <form method="POST" action="{{ url_for('like_app.toggle_like', post_id=post.post_id) }}" class="d-inline">
+                        {{ form.csrf_token }}
+                        <button type="submit" class="ff-action-link">{{ 'Unlike' if post.liked_by_me else 'Like' }}</button>
+                    </form>
+                </div>
+
+                <div class="likes small text-muted mt-1">{{ likes_line(post.likers) }}</div>
+```
+
+There is the whole feature on screen. The `<time>` tag carries the machine-readable `isoformat()` in `datetime` and a human date as its text, so `timeago.js` has something exact to work from and a reader without JavaScript still sees a date. The like form is inline, carries its CSRF token, and its button label flips on `post.liked_by_me`, which is why we loaded that flag. And `likes_line(post.likers)` is the template global we registered, rendering the line we wrote.
+
+The empty-looking `.likes` div is important even when there are no likers: `likes_line` returns an empty string then, but the div still exists, which gives the SSE handler somewhere to write when the first like arrives.
+
+While we're here, the comments deserve the same treatment the likes just got. A post with forty comments should not print forty comments:
+
+{lang=html,line-numbers=on,starting-line-number=38}
+```
+                <div class="comments mt-2">
+<!-- markua-start-insert -->
+                    {% set cs = post.comments %}
+                    {% set n = cs | length %}
+                    {% if n > 5 %}
+                        {% for c in cs[:2] %}{{ comment_row(c) }}{% endfor %}
+                        <div class="comments-hidden d-none">{% for c in cs[2:-2] %}{{ comment_row(c) }}{% endfor %}</div>
+                        <div class="comments-more-wrap"><a href="#" class="comments-more small">{{ n - 4 }} more comments</a></div>
+                        {% for c in cs[-2:] %}{{ comment_row(c) }}{% endfor %}
+                    {% else %}
+                        {% for c in cs %}{{ comment_row(c) }}{% endfor %}
+                    {% endif %}
+<!-- markua-end-insert -->
+                </div>
+```
+
+Past five comments we show the first two, hide the middle, and show the last two, with the count of what is hidden in between. That shape is deliberate: you get the start of the conversation and its most recent state, which is what you actually want when you glance at a thread.
+
+Last, the comment form starts hidden, since the "Comment" link in the action row is now what reveals it:
+
+{lang=html,line-numbers=on,starting-line-number=51}
+```
+                <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="comment-form mt-2 d-flex d-none">
+```
+
+[Save the file](https://fmze.co/fftq-5.13.12).
+
+The permalink page shares the card, so it inherits all of that for free. It just needs the wider column and its flash messages, and a slightly friendlier way back. The old link goes:
+
+{lang=html,line-numbers=off}
+```
+<!-- markua-start-delete -->
+        <a href="{{ url_for('post_app.home') }}">&larr; Back home</a>
+<!-- markua-end-delete -->
+```
+
+And the region becomes, in `templates/post/detail.html`:
+
+{lang=html,line-numbers=on,starting-line-number=9}
+```
+<div class="row">
+<!-- markua-start-insert -->
+    <div class="col-md-8 offset-md-2">
+
+        {% for message in get_flashed_messages() %}
+        <div class="alert alert-success">{{ message }}</div>
+        {% endfor %}
+
+        <a href="{{ url_for('post_app.home') }}" class="d-inline-block mb-3">&larr; Back to feed</a>
+<!-- markua-end-insert -->
+
+        {% include "post/_post_card.html" %}
+
+    </div>
+</div>
+```
+
+[Save the file](https://fmze.co/fftq-5.13.13).
+
+Restart and look at the feed. It is FriendFeed. The blue bar, the white entries, the action row under each post, relative times that update themselves. Like one of your own posts and the page reloads with your name on the likes line and the button reading Unlike.
+
+Two things are still not right, though, and both involve cards that JavaScript built rather than Jinja. Infinite scroll appends cards, and those cards keep their absolute timestamps, because `timeago.js` ran before they existed. Let's fix that and tighten the loader while we are in it. Replace `static/js/infinite_scroll.js`:
+
+{lang=js,line-numbers=on}
+```
+// markua-start-insert
+// Infinite-scroll pagination for the QuartFeed home page.
+// Watches #feed-sentinel; when it scrolls into view, fetches the next page of
+// feed cards from /feed?offset=N and appends them to #feed. Vanilla JS.
+document.addEventListener("DOMContentLoaded", function () {
+  var feed = document.getElementById("feed");
+  var sentinel = document.getElementById("feed-sentinel");
+  // Only run on pages that have both (i.e. the home feed).
+// markua-end-insert
+  if (!feed || !sentinel) return;
+
+// markua-start-insert
+  var loading = false;
+  var exhausted = false;
+// markua-end-insert
+
+// markua-start-insert
+  function currentCount() {
+    return feed.querySelectorAll(":scope > [data-post-id]").length;
+  }
+
+  function appendCards(html) {
+    var temp = document.createElement("div");
+    temp.innerHTML = html;
+
+    var added = document.createDocumentFragment();
+    var anyAdded = false;
+    var cards = temp.querySelectorAll("[data-post-id]");
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      var id = card.getAttribute("data-post-id");
+      // Dedupe: skip any card already present in the feed.
+      if (feed.querySelector('[data-post-id="' + id + '"]')) continue;
+      added.appendChild(card);
+      anyAdded = true;
+    }
+
+    if (anyAdded) {
+      feed.appendChild(added);
+      if (window.formatTimeago) window.formatTimeago(feed);
+    }
+  }
+// markua-end-insert
+```
+
+Three real improvements hide in `appendCards`. We parse the HTML into a detached div first, then move only the cards we actually want into a document fragment, and append that fragment once, so the browser does a single layout pass instead of one per card. The dedupe check matters more than it looks: SSE can prepend a post while you are scrolling, which shifts every offset by one, and without this you would see the same post twice. And the `formatTimeago(feed)` call is the fix we came for, formatting the newly-arrived times.
+
+`currentCount` uses `:scope >` so it counts only the feed's own direct children, not any nested element that happens to carry a post id.
+
+Now the loader and the observer:
+
+{lang=js,line-numbers=on,starting-line-number=39}
+```
+// markua-start-insert
+  function loadMore() {
+    if (loading || exhausted) return;
+// markua-end-insert
+    loading = true;
+
+// markua-start-insert
+    var offset = currentCount();
+    fetch("/feed?offset=" + offset, { headers: { "X-Requested-With": "fetch" } })
+      .then(function (resp) {
+        return resp.text();
+      })
+      .then(function (html) {
+        if (!html || html.trim() === "") {
+          exhausted = true;
+          observer.disconnect();
+          return;
+        }
+        appendCards(html);
+      })
+      .catch(function () {
+        // Network hiccup: allow a later retry rather than getting stuck.
+      })
+      .finally(function () {
+        loading = false;
+      });
+  }
+// markua-end-insert
+
+// markua-start-insert
+  var observer = new IntersectionObserver(
+    function (entries) {
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].isIntersecting) {
+          loadMore();
+        }
+      }
+    },
+    { rootMargin: "200px" }
+  );
+// markua-end-insert
+
+  observer.observe(sentinel);
+});
+```
+
+The `loading` guard stops the observer firing three requests while one is in flight, and `exhausted` disconnects the observer for good once the server returns nothing, so we stop asking. The `.catch` with a `.finally` is the important pairing: on a network blip we swallow the error but still clear `loading`, so scrolling again retries instead of the page deciding it has reached the end forever.
+
+[Save the file](https://fmze.co/fftq-5.13.14).
+
+The other JavaScript-built card is the live one, and it has more to learn. Open `static/js/broadcast.js`. It handles three event types now rather than two, so give it a header that says so:
+
+{lang=js,line-numbers=on,starting-line-number=1}
+```
+// Vanilla JS SSE client for the QuartFeed home page.
+// Listens for "post" / "comment" / "like" events and renders them into the
+// #feed container using template literals (no framework).
+```
+
+Every card `broadcast.js` prepends has to match what `_post_card.html` renders, so it needs the action row, the likes div, and the hidden comment form:
+
+{lang=js,line-numbers=on,starting-line-number=35}
+```
+// markua-start-insert
+            <p class="mb-1 entry-text">${window.linkify ? window.linkify(post.message) : escapeHtml(post.message)}</p>
+// markua-end-insert
+            ${(post.images && post.images.length)
+// markua-start-insert
+              ? `<div class="d-flex gap-2 mb-2" style="overflow-x: auto;">${post.images
+// markua-end-insert
+                  .map((im) => `<img src="${im.url}" alt="post image" style="height:200px;width:auto;border-radius:6px;">`)
+                  .join("")}</div>`
+              : ""}
+// markua-start-insert
+            <div class="ff-meta small text-muted mt-1">
+              <a href="${post.permalink}" class="ff-meta-time"><time class="timeago" datetime="${post.created}">${new Date(post.created).toLocaleString()}</time></a>
+              - <a href="#" class="ff-comment">Comment</a>
+              - <form method="POST" action="/like/${post.post_id}" class="d-inline"><input type="hidden" name="csrf_token" value="${csrfToken}"><button type="submit" class="ff-action-link">Like</button></form>
+            </div>
+            <div class="likes small text-muted mt-1"></div>
+// markua-end-insert
+            <div class="comments mt-2"></div>
+// markua-start-insert
+            <form method="POST" action="/comment/${post.post_id}" class="comment-form mt-2 d-flex d-none">
+// markua-end-insert
+```
+
+`window.linkify ? window.linkify(...) : escapeHtml(...)` is a small piece of defensive wiring. If `interactions.js` failed to load, we fall back to plain escaping rather than throwing and losing the card entirely. The likes div is empty because a brand-new post has no likes yet, and the button always says "Like" for the same reason.
+
+That old `formatWhen` helper we wrote for absolute dates is now dead weight: the `<time class="timeago">` tag plus `timeago.js` does the job, and does it better because it keeps updating. Delete the whole helper:
+
+{lang=js,line-numbers=off}
+```
+// markua-start-delete
+  const formatWhen = (iso) => {
+    const d = new Date(iso);
+    const month = d.toLocaleString("en-US", { month: "short" });
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${month} ${pad(d.getDate())}, ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+// markua-end-delete
+```
+
+Then call `formatTimeago` on the new card right after prepending it, so its timestamp is relative like every other:
+
+{lang=js,line-numbers=on,starting-line-number=56}
+```
+    feed.prepend(card);
+// markua-start-insert
+    if (window.formatTimeago) window.formatTimeago(card);
+// markua-end-insert
+```
+
+Give the comment listener the same `linkify` treatment, so a link in a live comment behaves like a link anywhere else:
+
+{lang=js,line-numbers=on,starting-line-number=68}
+```
+    commentEl.innerHTML = `<span class="comment-bubble">💬</span> ${window.linkify ? window.linkify(comment.comment) : escapeHtml(comment.comment)} - <a href="/user/${encodeURIComponent(comment.author_username)}" class="comment-author">@${escapeHtml(comment.author_username)}</a>`;
+```
+
+And finally the listener this whole lesson was heading towards. Add it after the `comment` one:
+
+{lang=js,line-numbers=on,starting-line-number=72}
+```
+// markua-start-insert
+  es.addEventListener("like", (e) => {
+    const like = JSON.parse(e.data);
+    const card = feed.querySelector(`[data-post-id="${like.post_id}"]`);
+    if (!card) return;
+
+    const likesDiv = card.querySelector(".likes");
+    if (likesDiv && window.renderLikesLine)
+      likesDiv.innerHTML = window.renderLikesLine(like.likers || []);
+// markua-end-insert
+  });
+```
+
+Nine lines, because all the work was done elsewhere. Find the card the event is about, find its likes div, and rewrite it with the browser twin of `likes_line`, fed the list of names the server just sent. The server decided who should receive this event, `renderLikesLine` decides how it reads, and this listener only has to put the one in the other.
+
+[Save the file](https://fmze.co/fftq-5.13.15).
+
+Now try it properly. Restart, open two browsers side by side, and log in as two users who follow each other. Post something from the left. It appears on the right instantly, in the new skin, with a relative timestamp. Click Like on the right and the left says "marta liked this" without a refresh. Click Like again and it disappears. That is the toggle, the unique constraint, the targeted delivery, and the two matching renderers, all doing their jobs at once.
+
+QuartFeed is now a complete, real-time social feed. All that's left is to make sure it stays that way.
+
+### Testing likes <!--  -->
 
 A like is a toggle: click once to like, click again to remove it. That toggle plus the little "who liked this" line under a post are the two things worth testing here.
 
@@ -4335,10 +5230,12 @@ from user.models import user_table  # noqa: F401
 from relationship.models import relationship_table  # noqa: F401
 from post.models import post_table, feed_table  # noqa: F401
 from comment.models import comment_table  # noqa: F401
+# markua-start-insert
 from like.models import like_table  # noqa: F401
+# markua-end-insert
 ```
 
-[Save the file](https://fmze.co/fftq-5.13.4).
+[Save the file](https://fmze.co/fftq-5.13.16).
 
 Now create `tests/test_like.py`.
 
@@ -4402,11 +5299,11 @@ async def test_like_requires_login(create_test_client):
 
 The first test likes a post and checks a row appears in the `like` table. The second clicks the same button twice and confirms the row is gone, which is the whole toggle behavior in two lines. The third keeps the route behind a login. Because our `like` table has a unique constraint on the post and user pair, these tests also quietly prove we can't double-like a post, since a second like removes the first instead of stacking.
 
-[Save the file](https://fmze.co/fftq-5.13.5).
+[Save the file](https://fmze.co/fftq-5.13.17).
 
 The "A and B liked this" line has its own small helper, `likes_line`, that collapses long lists so a wildly popular post doesn't print a hundred names. It's a pure function, so we test it directly. Add these to the `tests/test_helpers.py` we started when testing messages.
 
-{lang=python,line-numbers=on,starting-line-number=15}
+{lang=python,line-numbers=on,starting-line-number=17}
 ```
 from utils.helpers import likes_line
 
@@ -4436,7 +5333,7 @@ def test_likes_line_collapses_over_five():
 
 Four tests walk the helper from nothing to a crowd. With no likers it prints an empty string, so an unliked post shows nothing at all. With one name it links that name and adds "liked this". With a few it joins them with "and", each name a link to that person's profile. And once we pass five, it collapses to "first few names and 4 other people", tucking the rest into a hidden `likers-full` list that the page can reveal on click. That last test is the one that protects us, because the collapsing math is exactly the kind of off-by-one that slips through by eye.
 
-[Save the file](https://fmze.co/fftq-5.13.6).
+[Save the file](https://fmze.co/fftq-5.13.18).
 
 ## Testing the Live Feed <!-- 5.14 -->
 

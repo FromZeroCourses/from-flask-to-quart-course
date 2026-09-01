@@ -4642,7 +4642,7 @@ One rule in there is worth a second look, though, because it is not really about
 
 [Save the file](https://fmze.co/fftq-5.13.7).
 
-Two pieces of behaviour are still missing, and they have something in common. The likes line collapses past five names, so something has to expand it. And when a like arrives over SSE, the browser has to rebuild that line itself, in exactly the shape `likes_line` produces on the server. Create `static/js/interactions.js`:
+Two pieces of behaviour are still missing, and they have something in common. The likes line collapses past five names, so something has to expand it. And when a like arrives over SSE, the browser has to rebuild that line itself, in exactly the shape the server helper produces. Create `static/js/interactions.js`:
 
 {lang=js,line-numbers=on}
 ```
@@ -4952,9 +4952,9 @@ Next, the action row replacing the bare timestamp link, and the likes line under
                 <div class="likes small text-muted mt-1">{{ likes_line(post.likers) }}</div>
 ```
 
-There is the whole feature on screen. The `<time>` tag carries the machine-readable `isoformat()` in `datetime` and a human date as its text, so `timeago.js` has something exact to work from and a reader without JavaScript still sees a date.
+There is the whole feature on screen. The like form is inline, carries its CSRF token, and its button label flips on `post.liked_by_me`, which is why we loaded that flag. And `likes_line(post.likers)` is the template global we registered, rendering the line we wrote.
 
-The like form is inline, carries its CSRF token, and its button label flips on `post.liked_by_me`, which is why we loaded that flag. And `likes_line(post.likers)` is the template global we registered, rendering the line we wrote.
+The `<time>` tag is worth its own moment. It carries the machine-readable `isoformat()` in its `datetime` attribute and a human date as its text, so the library has something exact to work from and a reader without JavaScript still sees a real date rather than an empty gap.
 
 The empty-looking `.likes` div is important even when there are no likers: `likes_line` returns an empty string then, but the div still exists, which gives the SSE handler somewhere to write when the first like arrives.
 

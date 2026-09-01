@@ -7,11 +7,15 @@
 {% include "navbar.html" %}
 
 <div class="row">
-    <div class="col-md-6 offset-md-3">
+    <div class="col-md-8 offset-md-2">
+
+        {% for message in get_flashed_messages() %}
+        <div class="alert alert-success">{{ message }}</div>
+        {% endfor %}
+
+        <a href="{{ url_for('post_app.home') }}" class="d-inline-block mb-3">&larr; Back to feed</a>
 
         {% include "post/_post_card.html" %}
-
-        <a href="{{ url_for('post_app.home') }}">&larr; Back home</a>
 
     </div>
 </div>

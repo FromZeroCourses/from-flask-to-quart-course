@@ -4952,11 +4952,11 @@ Next, the action row replacing the bare timestamp link, and the likes line under
                 <div class="likes small text-muted mt-1">{{ likes_line(post.likers) }}</div>
 ```
 
-There is the whole feature on screen. The `<time>` tag carries the machine-readable `isoformat()` in `datetime` and a human date as its text, so `timeago.js` has something exact to work from and a reader without JavaScript still sees a date. The like form is inline, carries its CSRF token, and its button label flips on `post.liked_by_me`, which is why we loaded that flag. And `likes_line(post.likers)` is the template global we registered, rendering the line we wrote.
+There is the whole feature on screen. The `<time>` tag carries the machine-readable `isoformat()` in `datetime` and a human date as its text, so `timeago.js` has something exact to work from and a reader without JavaScript still sees a date.
+
+The like form is inline, carries its CSRF token, and its button label flips on `post.liked_by_me`, which is why we loaded that flag. And `likes_line(post.likers)` is the template global we registered, rendering the line we wrote.
 
 The empty-looking `.likes` div is important even when there are no likers: `likes_line` returns an empty string then, but the div still exists, which gives the SSE handler somewhere to write when the first like arrives.
-
-While we're here, the comments deserve the same treatment the likes just got. A post with forty comments should not print forty comments:
 
 {lang=html,line-numbers=on,starting-line-number=38}
 ```
@@ -4976,14 +4976,16 @@ While we're here, the comments deserve the same treatment the likes just got. A 
                 </div>
 ```
 
-Past five comments we show the first two, hide the middle, and show the last two, with the count of what is hidden in between. That shape is deliberate: you get the start of the conversation and its most recent state, which is what you actually want when you glance at a thread.
+While we're here, the comments deserve the same treatment the likes just got. A post with forty comments should not print forty comments:
 
-Last, the comment form starts hidden, since the "Comment" link in the action row is now what reveals it:
+Past five comments we show the first two, hide the middle, and show the last two, with the count of what is hidden in between. That shape is deliberate: you get the start of the conversation and its most recent state, which is what you actually want when you glance at a thread.
 
 {lang=html,line-numbers=on,starting-line-number=51}
 ```
                 <form method="POST" action="{{ url_for('comment_app.create_comment', post_id=post.post_id) }}" class="comment-form mt-2 d-flex d-none">
 ```
+
+Last, the comment form starts hidden, since the "Comment" link in the action row is now what reveals it:
 
 [Save the file](https://fmze.co/fftq-5.13.12).
 

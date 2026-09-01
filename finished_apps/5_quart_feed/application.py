@@ -29,8 +29,7 @@ def create_app(**config_overrides):
     def inject_cache_buster():
         # A fresh value every request. Appended to static asset URLs as
         # ?cb=<n> so reloading the page always re-fetches the current JS/CSS
-        # instead of a stale browser-cached copy — handy while students edit
-        # files on the host and watch the page update.
+        # instead of a stale browser-cached copy.
         return {"cb": random.randint(0, 2**31 - 1)}
 
     @app.template_global()

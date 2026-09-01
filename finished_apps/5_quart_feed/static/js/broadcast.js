@@ -13,11 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const escapeHtml = (str) =>
     String(str).replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
 
   es.addEventListener("post", (e) => {
@@ -56,8 +52,7 @@ document.addEventListener("DOMContentLoaded", () => {
             </form>
           </div>
         </div>
-      </div>
-    `;
+      </div>`;
     feed.prepend(card);
     if (window.formatTimeago) window.formatTimeago(card);
   });

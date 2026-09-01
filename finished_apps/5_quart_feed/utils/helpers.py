@@ -14,6 +14,35 @@ from user.models import user_table
 
 _URL_RE = re.compile(r"(https?://[^\s<]+)")
 
+
+async def get_user_by_username(conn: Any, username: str) -> Optional[Row]:
+    result = await conn.execute(
+        select(user_table).where(user_table.c.username == username)
+    )
+    return result.fetchone()
+
+
+def login_required(f: Callable) -> Callable:
+    @wraps(f)
+    async def decorated_function(*args: Any, **kwargs: Any) -> Any:
+        if session.get("username") is None:
+            return redirect(url_for("user_app.login", next=request.url))
+        return await f(*args, **kwargs)
+
+    return decorated_function
+
+
+async def get_user_by_id(conn: Any, user_id: int) -> Optional[Row]:
+    result = await conn.execute(select(user_table).where(user_table.c.id == user_id))
+    return result.fetchone()
+
+
+def image_url(user_id: int, image: Optional[int], size: str = "lg") -> str:
+    if image:
+        return f"{current_app.config['IMAGE_URL']}/avatars/{user_id}.{image}.{size}.png"
+    return "/static/default_profile.png"
+
+
 # Every process minting ids needs its OWN instance number, or two of them
 # will eventually agree on a millisecond and a sequence.
 _snowflake = SnowflakeGenerator(int(os.environ.get("INSTANCE_ID", "0")))
@@ -25,61 +54,14 @@ def generate_uid() -> str:
 
 
 def slugify(text: str, max_words: int = 6, max_len: int = 60) -> str:
-    """Turn a post message into an SEO-friendly URL slug.
-
-    Lowercases, strips punctuation, and keeps the first few words so the
-    permalink reads like ``/post/ab12cd34/i-need-to-go-to-the-supermarket``.
-    """
+    """Turn a post message into an SEO-friendly URL slug."""
     words = re.sub(r"[^a-z0-9\s-]", "", (text or "").lower()).split()
     slug = "-".join(words[:max_words])[:max_len].strip("-")
     return slug or "post"
 
 
-def login_required(f: Callable) -> Callable:
-    """Redirect anonymous visitors to the login page.
-
-    The wrapper itself must be an async function (not a sync function that
-    merely returns a coroutine) so that Quart's routing recognizes it as a
-    coroutine function and awaits it correctly.
-    """
-
-    @wraps(f)
-    async def decorated_function(*args: Any, **kwargs: Any) -> Any:
-        if session.get("username") is None:
-            return redirect(url_for("user_app.login", next=request.url))
-        return await f(*args, **kwargs)
-
-    return decorated_function
-
-
-async def get_user_by_username(conn: Any, username: str) -> Optional[Row]:
-    result = await conn.execute(
-        select(user_table).where(user_table.c.username == username)
-    )
-    return result.fetchone()
-
-
-async def get_user_by_id(conn: Any, user_id: int) -> Optional[Row]:
-    result = await conn.execute(select(user_table).where(user_table.c.id == user_id))
-    return result.fetchone()
-
-
-def image_url(user_id: int, image: Optional[int], size: str = "lg") -> str:
-    """Build the avatar URL for a user, at the requested size (sm/lg/xlg).
-
-    ``user_id``/``image`` are passed separately (rather than a full user row)
-    so this works both for a full ``user`` row and for a joined feed row that
-    only carries ``author_id``/``author_image`` columns. ``image`` is the
-    avatar's image_id (a timestamp); files are named by ``thumbnail_process``
-    as ``avatars/{user_id}.{image_id}.{size}.png``.
-    """
-    if image:
-        return f"{current_app.config['IMAGE_URL']}/avatars/{user_id}.{image}.{size}.png"
-    return "/static/default_profile.png"
-
-
 def post_image_url(post_id: int, image_id: int) -> str:
-    """URL for a post image (fixed-height variant), written by image_height_transform."""
+    """URL for a post image, written by image_height_transform."""
     return f"{current_app.config['IMAGE_URL']}/posts/{post_id}.{image_id}.xlg.png"
 
 

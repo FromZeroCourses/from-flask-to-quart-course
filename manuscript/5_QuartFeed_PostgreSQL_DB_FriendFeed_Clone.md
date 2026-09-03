@@ -4221,7 +4221,7 @@ $ docker compose run --rm web uv run alembic revision --autogenerate -m "create 
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
-Now the toggle view. Create `like/views.py`:
+Now the toggle view. Create `like/views.py`, starting with its imports and the form:
 
 {lang=python,line-numbers=on}
 ```
@@ -4242,8 +4242,14 @@ like_app = Blueprint("like_app", __name__)
 
 class LikeForm(QuartForm):
     """CSRF-only form used for the like/unlike toggle POST (no visible fields)."""
+```
 
+`LikeForm` has no fields at all. It exists so the POST carries a CSRF token, because liking changes state and a state change must never ride on a bare link. The imports tell you where this is going: `delete` and `insert` for the toggle, `func` for a count, `feed_table` for targeted delivery, and the SSE `broker` to announce the result.
 
+Next, the route:
+
+{lang=python,line-numbers=on,starting-line-number=20}
+```
 @like_app.route("/like/<int:post_id>", methods=["POST"])
 @login_required
 async def toggle_like(post_id: int):
@@ -4252,6 +4258,14 @@ async def toggle_like(post_id: int):
     if await form.validate_on_submit():
         engine = current_app.dbc  # type: ignore
         async with engine.begin() as conn:
+```
+
+It answers POST only, it is behind `login_required`, and `validate_on_submit` is where the CSRF token gets checked. Then we open a single transaction, and everything that follows happens inside it.
+
+Now the toggle itself, still inside that `async with` block:
+
+{lang=python,line-numbers=on,starting-line-number=28}
+```
             existing = (
                 await conn.execute(
                     select(like_table).where(
@@ -4271,7 +4285,7 @@ async def toggle_like(post_id: int):
 
 That is the whole idea of the lesson in nine lines. We look for an existing like from this user on this post. If there is one we delete it, and if there isn't we insert one. The same button, the same route, both directions. Nothing anywhere has to know whether it is "liking" or "unliking", and clicking twice quickly can't leave a mess behind, because the unique constraint means there was never more than one row to begin with.
 
-Now the second half of the view, still inside that `async with` block. Having toggled, we need to tell the page what the likes look like now:
+Now the second half of the view, still inside that `async with` block. Having toggled, we need to tell the page what the likes look like now. First the count:
 
 {lang=python,line-numbers=on,starting-line-number=44}
 ```
@@ -4282,7 +4296,14 @@ Now the second half of the view, still inside that `async with` block. Having to
                     .where(like_table.c.post_id == post_id)
                 )
             ).scalar_one()
+```
 
+A plain `count()` over the like rows for this post, read with `scalar_one` because a count is always exactly one value.
+
+Then the names:
+
+{lang=python,line-numbers=on,starting-line-number=52}
+```
             # Names of everyone who likes the post now, so the "A, B and N
             # other people liked this" line can re-render live.
             likers = [
@@ -4300,7 +4321,14 @@ Now the second half of the view, still inside that `async with` block. Having to
                     )
                 ).fetchall()
             ]
+```
 
+We gather the likers' names in the order they liked, joining `like` to `user` to turn ids into usernames. That order matters later: the line under the post will name the first three, and "first" should mean who liked it first.
+
+Then who gets told:
+
+{lang=python,line-numbers=on,starting-line-number=70}
+```
             # Deliver the updated count only to pages that have this post
             # (i.e. the users whose feed contains it), not every open page.
             recipient_ids = [
@@ -4313,7 +4341,14 @@ Now the second half of the view, still inside that `async with` block. Having to
                     )
                 ).fetchall()
             ]
+```
 
+The `recipient_ids` query is the same targeted delivery we built for comments: we ask the `feed` table who actually has this post, and we push the event only to them. A like is not news to someone who can't see the post.
+
+Finally, outside the transaction, the event and the redirect:
+
+{lang=python,line-numbers=on,starting-line-number=83}
+```
         await broker.publish_many(
             recipient_ids,
             ServerSentEvent(
@@ -4327,7 +4362,7 @@ Now the second half of the view, still inside that `async with` block. Having to
     return redirect(url_for("post_app.home"))
 ```
 
-We count the likes, then gather the likers' names in the order they liked, joining `like` to `user` to turn ids into usernames. The `recipient_ids` query is the same targeted delivery we built for comments: we ask the `feed` table who actually has this post, and we push the event only to them. A like is not news to someone who can't see the post.
+Notice the indentation: `publish_many` sits one level out, so the transaction has already committed by the time anyone hears about the like. The event carries the post id, the new count and the names, which is everything a page needs to redraw the line without asking the server again. Then a plain redirect back home.
 
 [Save the file](https://fmze.co/fftq-5.13.3).
 
@@ -4434,7 +4469,14 @@ def likes_line(likers: List[str], head: int = 3, collapse_over: int = 5) -> Mark
     n = len(names)
     if n == 0:
         return Markup("")
+```
 
+Read it from the top. Every name becomes a profile link first, and `escape(name)` inside `_profile_link` is what lets us return `Markup` at the end without opening an injection hole: the only unescaped HTML in the result is HTML we wrote ourselves. If nobody liked the post we return an empty `Markup`, so the line renders as nothing at all rather than an empty bullet.
+
+Now the two shapes the line can take:
+
+{lang=python,line-numbers=on,starting-line-number=84}
+```
     emoji = '<span class="likes-emoji">\U0001f642</span> '
     if n <= collapse_over:
         if n == 1:
@@ -4453,8 +4495,6 @@ def likes_line(likers: List[str], head: int = 3, collapse_over: int = 5) -> Mark
     expanded = f'<span class="likers-full d-none">{full} liked this</span>'
     return Markup(emoji + collapsed + expanded)
 ```
-
-Read it from the top. Every name becomes a profile link first, and `escape(name)` inside `_profile_link` is what lets us return `Markup` at the end without opening an injection hole: the only unescaped HTML in the result is HTML we wrote ourselves. If nobody liked the post we return an empty `Markup`, so the line renders as nothing at all rather than an empty bullet.
 
 Up to five names we list them all, with a natural "and" before the last one. Past five we build two spans instead of one: a `likers-collapsed` span showing the first three plus an "N other people" link, and a `likers-full` span carrying every name, hidden with Bootstrap's `d-none`. Both are in the HTML from the start, so revealing the full list later is a class change in the browser and not another request.
 
@@ -4488,7 +4528,16 @@ Then teach `_post_extras` about likes. It already gathers a post's comments and 
         )
     ).fetchall()
     likers = [row.username for row in liker_rows]
+# markua-end-insert
+```
 
+The first query is the same join the view used, so the server-rendered line and the live one agree by construction.
+
+Then one more lookup, and the three new keys:
+
+{lang=python,line-numbers=on,starting-line-number=131}
+```
+# markua-start-insert
     liked_by_me = (
         await conn.execute(
             select(like_table).where(
@@ -4509,7 +4558,7 @@ Then teach `_post_extras` about likes. It already gathers a post's comments and 
     }
 ```
 
-The first query is the same join the view used, so the server-rendered line and the live one agree by construction. `liked_by_me` is the one that makes the button honest: it is a single lookup for this viewer's own row, and it decides whether the button says Like or Unlike. Without it, someone who has already liked a post would still be invited to like it again.
+`liked_by_me` is the one that makes the button honest: it is a single lookup for this viewer's own row, and it decides whether the button says Like or Unlike. Without it, someone who has already liked a post would still be invited to like it again.
 
 [Save the file](https://fmze.co/fftq-5.13.6).
 
@@ -4519,7 +4568,7 @@ That is the like feature, end to end on the server. Now the look.
 
 Everything we have built renders through Bootstrap's defaults, which is fine but generic. FriendFeed had a specific, recognizable style: a soft blue-grey page, white entries with thin borders, a blue title bar over the column, and a row of small text links under each post reading "time - Comment - Like". Almost none of that needs new markup. It needs a stylesheet.
 
-This is not a CSS course, so we are not going to walk through it rule by rule. Create `static/css/friendfeed.css` with the styles below, which give us the FriendFeed skin and the Like control:
+This is not a CSS course, so we are not going to walk through it rule by rule, but we will take it a group at a time so you know what each part is for. Create `static/css/friendfeed.css`, starting with the palette:
 
 {lang=css,line-numbers=on}
 ```
@@ -4536,7 +4585,14 @@ body {
     background: var(--ff-page);
     color: #1a1a1a;
 }
+```
 
+The colours are named once, as custom properties on `:root`, and every rule below reaches for the name rather than the hex. The page itself goes the soft blue-grey FriendFeed used.
+
+Next the top bar and the wordmark:
+
+{lang=css,line-numbers=on,starting-line-number=15}
+```
 /* Top bar with the wordmark */
 .navbar {
     background: #fff !important;
@@ -4548,7 +4604,14 @@ body {
     font-size: 1.7rem;
     letter-spacing: -0.5px;
 }
+```
 
+A white bar with a thin border underneath, and a heavy blue wordmark, which is most of what made the original recognisable at a glance.
+
+Then the column bar and the entries:
+
+{lang=css,line-numbers=on,starting-line-number=27}
+```
 /* Blue "Home" title bar over the feed column */
 .ff-bar {
     background: linear-gradient(var(--ff-blue-light), var(--ff-blue));
@@ -4564,7 +4627,14 @@ body {
     border: 1px solid var(--ff-border);
     box-shadow: none;
 }
+```
 
+`.ff-bar` is the blue "Home" strip that will sit over the feed, and the cards lose Bootstrap's shadow in favour of a one-pixel border, so entries read as a list rather than a stack of panels.
+
+Now the type sizes and link colours:
+
+{lang=css,line-numbers=on,starting-line-number=43}
+```
 /* Font hierarchy: the author + post text read larger than the meta/likes/
    comments below them. */
 .entry-author {
@@ -4585,7 +4655,14 @@ body {
 a {
     color: var(--ff-blue);
 }
+```
 
+The author and the post text read slightly larger than everything under them, which is the whole hierarchy of a feed entry, and links go FriendFeed blue.
+
+Then the likes and comments:
+
+{lang=css,line-numbers=on,starting-line-number=64}
+```
 /* Likes + comments */
 .likes-emoji {
     font-size: 0.95rem;
@@ -4606,7 +4683,14 @@ a {
 .comments-more:hover {
     text-decoration: underline;
 }
+```
 
+The `likers-more` and `comments-more` links are the expanders we will wire up in JavaScript shortly, styled as plain blue text with a pointer.
+
+Then the timestamps and the action row:
+
+{lang=css,line-numbers=on,starting-line-number=85}
+```
 time.timeago {
     color: var(--ff-muted);
 }
@@ -4625,6 +4709,14 @@ time.timeago {
 .ff-meta .ff-meta-time time {
     color: var(--ff-muted);
 }
+```
+
+`.ff-meta` is the row of small text links under every post, "time - Comment - Like", with the time muted and the actions blue.
+
+And the last rule, which is the one to look at twice:
+
+{lang=css,line-numbers=on,starting-line-number=103}
+```
 /* Submit button styled as a plain inline text link */
 .ff-action-link {
     background: none;
@@ -4636,7 +4728,7 @@ time.timeago {
 }
 ```
 
-One rule in there is worth a second look, though, because it is not really about looks. Liking is a state change, so it has to be a form POST carrying a CSRF token, which means the control has to be a real `<button>` and not a link. But visually it belongs in a row of text links. So `.ff-action-link` strips the button back to nothing: no background, no border, no padding, inherit the font, sit on the text baseline like its neighbours. That is how you get correct, secure HTML that still looks like the design, instead of a link pretending to be a button and losing CSRF protection on the way.
+That rule is not really about looks. Liking is a state change, so it has to be a form POST carrying a CSRF token, which means the control has to be a real `<button>` and not a link. But visually it belongs in a row of text links. So `.ff-action-link` strips the button back to nothing: no background, no border, no padding, inherit the font, sit on the text baseline like its neighbours. That is how you get correct, secure HTML that still looks like the design, instead of a link pretending to be a button and losing CSRF protection on the way.
 
 ![Liking is a state change, so the control has to be a real button inside a CSRF-protected POST form; .ff-action-link is what makes that button sit in the row looking like the text links beside it.](images/5.13-scene9-img1.png)
 
@@ -4664,7 +4756,14 @@ Two pieces of behaviour are still missing, and they have something in common. Th
       }[c];
     });
   }
+```
 
+The header comment is the contract: this file exposes three functions on `window` so that `broadcast.js` can draw a card exactly the way the server does. `esc` is the smallest possible HTML escaper, and everything below leans on it.
+
+Now the first of the three:
+
+{lang=js,line-numbers=on,starting-line-number=20}
+```
   // Escape text and turn bare http(s) URLs into truncated links.
   function linkify(text, maxLen) {
     maxLen = maxLen || 40;
@@ -4689,7 +4788,7 @@ Two pieces of behaviour are still missing, and they have something in common. Th
 
 This is a deliberate port of the `linkify` we wrote in Python, and the porting is the point. A post that arrives over SSE is built by this file, and a post that arrives with the rest of the page is built by Jinja. If the two disagree about how a URL is rendered, the same post ends up with two different appearances depending on which path delivered it, and neither one is wrong enough to notice quickly. Same rule, both sides.
 
-Now the likes line, which is the same argument again, plus the timestamps:
+Now the likes line, which is the same argument again:
 
 {lang=js,line-numbers=on,starting-line-number=41}
 ```
@@ -4703,6 +4802,14 @@ Now the likes line, which is the same argument again, plus the timestamps:
         '<a href="/user/' + encodeURIComponent(name) + '">' + esc(name) + "</a>"
       );
     });
+```
+
+Same defaults as the Python, three names shown and a collapse past five, and every name becomes a profile link before anything else happens.
+
+Then the short list:
+
+{lang=js,line-numbers=on,starting-line-number=51}
+```
     var emoji = '<span class="likes-emoji">🙂</span> ';
     if (names.length <= collapseOver) {
       var body =
@@ -4714,6 +4821,14 @@ Now the likes line, which is the same argument again, plus the timestamps:
             " liked this";
       return emoji + body;
     }
+```
+
+Up to five names we write them all out, with the "and" before the last one.
+
+And the long one:
+
+{lang=js,line-numbers=on,starting-line-number=62}
+```
     var shown = names.slice(0, head).join(", ");
     var others = names.length - head;
     var full = names.join(", ");
@@ -4724,7 +4839,14 @@ Now the likes line, which is the same argument again, plus the timestamps:
       '<span class="likers-full d-none">' + full + " liked this</span>"
     );
   }
+```
 
+Read `renderLikesLine` side by side with the Python `likes_line` and it is the same function twice: same defaults of three and five, same "and" before the last name, same two spans past the threshold. Keeping a pair like this in step is a real maintenance cost, and it is worth paying only where the two renderers genuinely have to produce identical output. This is one of those places, because a like can update a card that Jinja drew or a card that JavaScript drew, and it must not matter which.
+
+Now the timestamps, and the three exports:
+
+{lang=js,line-numbers=on,starting-line-number=73}
+```
   // Relative timestamps, via the timeago.js library loaded in base.html.
   // It keeps re-rendering on its own, so each node is registered once.
   function formatTimeago(root) {
@@ -4736,13 +4858,11 @@ Now the likes line, which is the same argument again, plus the timestamps:
   window.formatTimeago = formatTimeago;
 ```
 
-Read `renderLikesLine` side by side with the Python `likes_line` and it is the same function twice: same defaults of three and five, same "and" before the last name, same two spans past the threshold. Keeping a pair like this in step is a real maintenance cost, and it is worth paying only where the two renderers genuinely have to produce identical output. This is one of those places, because a like can update a card that Jinja drew or a card that JavaScript drew, and it must not matter which.
-
 `formatTimeago` is the small one, and it is small on purpose. Every post currently shows an absolute date, which is precise and unhelpful: in a feed you want "2 minutes ago". Writing that yourself means a units table, rounding rules and a refresh timer, which is a lot of date arithmetic for a course about Quart. So we hand it to `timeago.js`, a two-kilobyte library that does exactly this one job, and our whole contribution is passing it the nodes to look after. It re-renders them on its own from then on, so "just now" turns into "a minute ago" without us running a timer.
 
 ![Relative timestamps are borrowed, not built: timeago.js replaces the units table, rounding rules and refresh timer we would otherwise write, and keeps re-rendering the nodes on its own.](images/5.13-scene10-img1.png)
 
-Finally, one click handler for the whole page, and the first pass over the timestamps:
+Finally, one click handler for the whole page. It starts with the Comment link:
 
 {lang=js,line-numbers=on,starting-line-number=83}
 ```
@@ -4760,7 +4880,14 @@ Finally, one click handler for the whole page, and the first pass over the times
       }
       return;
     }
+```
 
+Clicking Comment finds the card the link lives in, reveals that card's comment form, and puts the cursor in the box, so one click is enough to start typing.
+
+Then the photo control:
+
+{lang=js,line-numbers=on,starting-line-number=98}
+```
     // "Add photos" -> reveal the file input and hide the link.
     var addPhotos = e.target.closest(".add-photos");
     if (addPhotos) {
@@ -4771,7 +4898,14 @@ Finally, one click handler for the whole page, and the first pass over the times
       addPhotos.classList.add("d-none");
       return;
     }
+```
 
+Add photos does the same trick for the file input in the composer, then hides itself, since there is nothing left for it to do.
+
+Then the two expanders:
+
+{lang=js,line-numbers=on,starting-line-number=109}
+```
     // Expanders: "N other people" (likes) and "N more comments" (comments).
     var more = e.target.closest(".likers-more");
     if (more) {
@@ -4790,16 +4924,23 @@ Finally, one click handler for the whole page, and the first pass over the times
       cmore.closest(".comments-more-wrap").classList.add("d-none");
     }
   });
+```
 
+One listener on `document` handles all four interactions, and that is not laziness. Cards arrive from three directions now: rendered by Jinja on load, appended by infinite scroll, and prepended by SSE. If we attached handlers to each button we would have to re-attach them every time a card appeared, and forgetting once means a dead link with no error. Listening on `document` and asking `e.target.closest(...)` which control was clicked means a card works the moment it exists, no matter who created it.
+
+Expanding the likes is then just swapping which of the two spans carries `d-none`, exactly as `likes_line` set them up.
+
+Last, the first pass over the timestamps, once the page has loaded:
+
+{lang=js,line-numbers=on,starting-line-number=128}
+```
   document.addEventListener("DOMContentLoaded", function () {
     formatTimeago(document);
   });
 })();
 ```
 
-One listener on `document` handles all four interactions, and that is not laziness. Cards arrive from three directions now: rendered by Jinja on load, appended by infinite scroll, and prepended by SSE. If we attached handlers to each button we would have to re-attach them every time a card appeared, and forgetting once means a dead link with no error. Listening on `document` and asking `e.target.closest(...)` which control was clicked means a card works the moment it exists, no matter who created it.
-
-Expanding the likes is then just swapping which of the two spans carries `d-none`, exactly as `likes_line` set them up.
+That one call hands every `time.timeago` already on the page to the library, and the library keeps them current from then on.
 
 [Save the file](https://fmze.co/fftq-5.13.8).
 
@@ -4835,6 +4976,16 @@ The navbar is doing very little for us: a dead wordmark and two flat links. Let'
             <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="navbarNav">
+<!-- markua-end-insert -->
+```
+
+The brand now links to `post_app.home`, so the wordmark behaves the way every wordmark on the web behaves. The `navbar-toggler` and the `collapse` wrapper are the Bootstrap pattern for a nav that turns into a hamburger on a narrow screen.
+
+Then the links themselves:
+
+{lang=html,line-numbers=on,starting-line-number=9}
+```
+<!-- markua-start-insert -->
             <div class="navbar-nav ms-auto">
                 {% if session.username %}
                 <li class="nav-item dropdown list-unstyled">
@@ -4860,7 +5011,7 @@ The navbar is doing very little for us: a dead wordmark and two flat links. Let'
 </nav>
 ```
 
-The `navbar-toggler` and the `collapse` wrapper are the Bootstrap pattern for a nav that turns into a hamburger on a narrow screen, and the dropdown is what stops the bar filling up as we add pages. Notice the brand now links to `post_app.home`, so the wordmark behaves the way every wordmark on the web behaves.
+Signed in, the account links gather into a dropdown under the username, which is what stops the bar filling up as we add pages. Signed out, it is just Login and Register.
 
 [Save the file](https://fmze.co/fftq-5.13.10).
 
@@ -5044,7 +5195,14 @@ document.addEventListener("DOMContentLoaded", function () {
   var loading = false;
   var exhausted = false;
 // markua-end-insert
+```
 
+The two flags are new. `loading` will stop us firing a second request while one is in flight, and `exhausted` will remember that the server has nothing more to give.
+
+Then the counting and the parsing:
+
+{lang=js,line-numbers=on,starting-line-number=13}
+```
 // markua-start-insert
   function currentCount() {
     return feed.querySelectorAll(":scope > [data-post-id]").length;
@@ -5065,7 +5223,16 @@ document.addEventListener("DOMContentLoaded", function () {
       added.appendChild(card);
       anyAdded = true;
     }
+// markua-end-insert
+```
 
+`currentCount` uses `:scope >` so it counts only the feed's own direct children, not any nested element that happens to carry a post id. In `appendCards` we parse the HTML into a detached div first, then move only the cards we actually want into a document fragment. The dedupe check matters more than it looks: SSE can prepend a post while you are scrolling, which shifts every offset by one, and without this you would see the same post twice.
+
+Then the append itself:
+
+{lang=js,line-numbers=on,starting-line-number=33}
+```
+// markua-start-insert
     if (anyAdded) {
       feed.appendChild(added);
       if (window.formatTimeago) window.formatTimeago(feed);
@@ -5074,9 +5241,7 @@ document.addEventListener("DOMContentLoaded", function () {
 // markua-end-insert
 ```
 
-Three real improvements hide in `appendCards`. We parse the HTML into a detached div first, then move only the cards we actually want into a document fragment, and append that fragment once, so the browser does a single layout pass instead of one per card. The dedupe check matters more than it looks: SSE can prepend a post while you are scrolling, which shifts every offset by one, and without this you would see the same post twice. And the `formatTimeago(feed)` call is the fix we came for, formatting the newly-arrived times.
-
-`currentCount` uses `:scope >` so it counts only the feed's own direct children, not any nested element that happens to carry a post id.
+The fragment is appended once, so the browser does a single layout pass instead of one per card. And the `formatTimeago(feed)` call is the fix we came for, formatting the newly-arrived times.
 
 Now the loader and the observer:
 
@@ -5102,6 +5267,16 @@ Now the loader and the observer:
         }
         appendCards(html);
       })
+// markua-end-insert
+```
+
+The `loading` guard stops the observer firing three requests while one is in flight, and `exhausted` disconnects the observer for good once the server returns nothing, so we stop asking.
+
+Then the end of the chain:
+
+{lang=js,line-numbers=on,starting-line-number=56}
+```
+// markua-start-insert
       .catch(function () {
         // Network hiccup: allow a later retry rather than getting stuck.
       })
@@ -5110,7 +5285,14 @@ Now the loader and the observer:
       });
   }
 // markua-end-insert
+```
 
+The `.catch` with a `.finally` is the important pairing: on a network blip we swallow the error but still clear `loading`, so scrolling again retries instead of the page deciding it has reached the end forever.
+
+And the observer that drives it all:
+
+{lang=js,line-numbers=on,starting-line-number=64}
+```
 // markua-start-insert
   var observer = new IntersectionObserver(
     function (entries) {
@@ -5128,7 +5310,7 @@ Now the loader and the observer:
 });
 ```
 
-The `loading` guard stops the observer firing three requests while one is in flight, and `exhausted` disconnects the observer for good once the server returns nothing, so we stop asking. The `.catch` with a `.finally` is the important pairing: on a network blip we swallow the error but still clear `loading`, so scrolling again retries instead of the page deciding it has reached the end forever.
+It watches the sentinel with a 200 pixel margin, so the next page starts loading just before you reach the bottom rather than after, and calls `loadMore` each time the sentinel comes into view.
 
 [Save the file](https://fmze.co/fftq-5.13.14).
 
@@ -5247,7 +5429,7 @@ from like.models import like_table  # noqa: F401
 
 [Save the file](https://fmze.co/fftq-5.13.16).
 
-Now create `tests/test_like.py`.
+Now create `tests/test_like.py`, starting with two helpers:
 
 {lang=python,line-numbers=on,starting-line-number=1}
 ```
@@ -5270,8 +5452,14 @@ async def _make_post(client, app, message: str = "hello world") -> int:
         async with current_app.dbc.begin() as conn:
             row = (await conn.execute(select(post_table))).fetchone()
     return row.id
+```
 
+One registers and logs in a user, the other creates a post and returns its id. Every test below needs both, and keeping them out of the tests keeps each test about one thing.
 
+Then the first test:
+
+{lang=python,line-numbers=on,starting-line-number=22}
+```
 @pytest.mark.asyncio
 async def test_like_adds_row(create_test_client, create_test_app):
     await _register_and_login(create_test_client, "alice")
@@ -5284,8 +5472,14 @@ async def test_like_adds_row(create_test_client, create_test_app):
         async with current_app.dbc.begin() as conn:
             likes = (await conn.execute(select(like_table))).fetchall()
     assert len(likes) == 1
+```
 
+It likes a post and checks that exactly one row appears in the `like` table.
 
+And the other two:
+
+{lang=python,line-numbers=on,starting-line-number=36}
+```
 @pytest.mark.asyncio
 async def test_like_toggles_off(create_test_client, create_test_app):
     await _register_and_login(create_test_client, "alice")
@@ -5307,7 +5501,7 @@ async def test_like_requires_login(create_test_client):
     assert "/login" in response.headers.get("Location", "")
 ```
 
-The first test likes a post and checks a row appears in the `like` table. The second clicks the same button twice and confirms the row is gone, which is the whole toggle behavior in two lines. The third keeps the route behind a login. Because our `like` table has a unique constraint on the post and user pair, these tests also quietly prove we can't double-like a post, since a second like removes the first instead of stacking.
+The second clicks the same button twice and confirms the row is gone, which is the whole toggle behavior in two lines. The third keeps the route behind a login. Because our `like` table has a unique constraint on the post and user pair, these tests also quietly prove we can't double-like a post, since a second like removes the first instead of stacking.
 
 [Save the file](https://fmze.co/fftq-5.13.17).
 
@@ -5327,8 +5521,14 @@ def test_likes_line_empty():
 def test_likes_line_one():
     s = str(likes_line(["alice"]))
     assert '<a href="/user/alice">alice</a> liked this' in s
+```
 
+Four tests walk the helper from nothing to a crowd. With no likers it prints an empty string, so an unliked post shows nothing at all. With one name it links that name and adds "liked this".
 
+Then the two that matter:
+
+{lang=python,line-numbers=on,starting-line-number=29}
+```
 def test_likes_line_few():
     s = str(likes_line(["a", "b", "c"]))
     assert " and " in s and "liked this" in s
@@ -5343,7 +5543,7 @@ def test_likes_line_collapses_over_five():
     assert "/user/u1" in s and "/user/u7" in s  # first shown + present in full list
 ```
 
-Four tests walk the helper from nothing to a crowd. With no likers it prints an empty string, so an unliked post shows nothing at all. With one name it links that name and adds "liked this". With a few it joins them with "and", each name a link to that person's profile. And once we pass five, it collapses to "first few names and 4 other people", tucking the rest into a hidden `likers-full` list that the page can reveal on click. That last test is the one that protects us, because the collapsing math is exactly the kind of off-by-one that slips through by eye.
+With a few it joins them with "and", each name a link to that person's profile. And once we pass five, it collapses to "first few names and 4 other people", tucking the rest into a hidden `likers-full` list that the page can reveal on click. That last test is the one that protects us, because the collapsing math is exactly the kind of off-by-one that slips through by eye.
 
 [Save the file](https://fmze.co/fftq-5.13.18).
 

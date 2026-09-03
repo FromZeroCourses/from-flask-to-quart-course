@@ -4212,12 +4212,24 @@ from like.models import like_table  # noqa: F401
 # markua-end-insert
 ```
 
-[Save the file](https://fmze.co/fftq-5.13.2). Then rebuild the web image and let Alembic write and apply the revision:
+[Save the file](https://fmze.co/fftq-5.13.2). Then rebuild the web image, since the app now has a file it did not have before:
 
 {lang=bash,line-numbers=off}
 ```
 $ docker compose build web
+```
+
+Let Alembic write the revision from what `env.py` now imports:
+
+{lang=bash,line-numbers=off}
+```
 $ docker compose run --rm web uv run alembic revision --autogenerate -m "create like table"
+```
+
+And apply it, which creates the `like` table with its unique constraint:
+
+{lang=bash,line-numbers=off}
+```
 $ docker compose run --rm web uv run alembic upgrade head
 ```
 
@@ -4606,9 +4618,7 @@ Next the top bar and the wordmark:
 }
 ```
 
-A white bar with a thin border underneath, and a heavy blue wordmark, which is most of what made the original recognisable at a glance.
-
-Then the column bar and the entries:
+A white bar with a thin border underneath, and a heavy blue wordmark, which is most of what made the original recognisable at a glance. Then the column bar and the entries:
 
 {lang=css,line-numbers=on,starting-line-number=27}
 ```
@@ -5011,7 +5021,7 @@ Then the links themselves:
 </nav>
 ```
 
-Signed in, the account links gather into a dropdown under the username, which is what stops the bar filling up as we add pages. Signed out, it is just Login and Register.
+Signed in, the account links gather into a dropdown under the username, which is what stops the bar filling up as we add pages. The `dropdown-menu-end` class keeps the menu hanging from the right edge, under the name that opens it, and the divider separates the two profile links from Logout. Signed out, it is just Login and Register.
 
 [Save the file](https://fmze.co/fftq-5.13.10).
 
@@ -5454,9 +5464,7 @@ async def _make_post(client, app, message: str = "hello world") -> int:
     return row.id
 ```
 
-One registers and logs in a user, the other creates a post and returns its id. Every test below needs both, and keeping them out of the tests keeps each test about one thing.
-
-Then the first test:
+One registers and logs in a user, the other creates a post and returns its id. Every test below needs both, and keeping them out of the tests keeps each test about one thing. Then the first test:
 
 {lang=python,line-numbers=on,starting-line-number=22}
 ```
@@ -5474,9 +5482,7 @@ async def test_like_adds_row(create_test_client, create_test_app):
     assert len(likes) == 1
 ```
 
-It likes a post and checks that exactly one row appears in the `like` table.
-
-And the other two:
+It likes a post, expects the redirect back home, and checks that exactly one row appears in the `like` table. Then the other two, which are the ones that prove the toggle:
 
 {lang=python,line-numbers=on,starting-line-number=36}
 ```

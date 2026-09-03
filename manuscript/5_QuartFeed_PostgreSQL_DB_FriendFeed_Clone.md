@@ -4256,9 +4256,7 @@ class LikeForm(QuartForm):
     """CSRF-only form used for the like/unlike toggle POST (no visible fields)."""
 ```
 
-`LikeForm` has no fields at all. It exists so the POST carries a CSRF token, because liking changes state and a state change must never ride on a bare link. The imports tell you where this is going: `delete` and `insert` for the toggle, `func` for a count, `feed_table` for targeted delivery, and the SSE `broker` to announce the result.
-
-Next, the route:
+`LikeForm` has no fields at all. It exists so the POST carries a CSRF token, because liking changes state and a state change must never ride on a bare link. The imports tell you where this is going: `delete` and `insert` for the toggle, `func` for a count, `feed_table` for targeted delivery, and the SSE `broker` to announce the result. Next, the route:
 
 {lang=python,line-numbers=on,starting-line-number=20}
 ```
@@ -4272,9 +4270,7 @@ async def toggle_like(post_id: int):
         async with engine.begin() as conn:
 ```
 
-It answers POST only, it is behind `login_required`, and `validate_on_submit` is where the CSRF token gets checked. Then we open a single transaction, and everything that follows happens inside it.
-
-Now the toggle itself, still inside that `async with` block:
+It answers POST only, it is behind `login_required`, and `validate_on_submit` is where the CSRF token gets checked. Then we open a single transaction, and everything that follows happens inside it. Now the toggle itself, still inside that `async with` block:
 
 {lang=python,line-numbers=on,starting-line-number=28}
 ```
@@ -4310,9 +4306,7 @@ Now the second half of the view, still inside that `async with` block. Having to
             ).scalar_one()
 ```
 
-A plain `count()` over the like rows for this post, read with `scalar_one` because a count is always exactly one value.
-
-Then the names:
+A plain `count()` over the like rows for this post, read with `scalar_one` because a count is always exactly one value. Then the names:
 
 {lang=python,line-numbers=on,starting-line-number=52}
 ```
@@ -4335,9 +4329,7 @@ Then the names:
             ]
 ```
 
-We gather the likers' names in the order they liked, joining `like` to `user` to turn ids into usernames. That order matters later: the line under the post will name the first three, and "first" should mean who liked it first.
-
-Then who gets told:
+We gather the likers' names in the order they liked, joining `like` to `user` to turn ids into usernames. That order matters later: the line under the post will name the first three, and "first" should mean who liked it first. Then who gets told:
 
 {lang=python,line-numbers=on,starting-line-number=70}
 ```
@@ -4355,9 +4347,7 @@ Then who gets told:
             ]
 ```
 
-The `recipient_ids` query is the same targeted delivery we built for comments: we ask the `feed` table who actually has this post, and we push the event only to them. A like is not news to someone who can't see the post.
-
-Finally, outside the transaction, the event and the redirect:
+The `recipient_ids` query is the same targeted delivery we built for comments: we ask the `feed` table who actually has this post, and we push the event only to them. A like is not news to someone who can't see the post. Finally, outside the transaction, the event and the redirect:
 
 {lang=python,line-numbers=on,starting-line-number=83}
 ```
@@ -4483,9 +4473,7 @@ def likes_line(likers: List[str], head: int = 3, collapse_over: int = 5) -> Mark
         return Markup("")
 ```
 
-Read it from the top. Every name becomes a profile link first, and `escape(name)` inside `_profile_link` is what lets us return `Markup` at the end without opening an injection hole: the only unescaped HTML in the result is HTML we wrote ourselves. If nobody liked the post we return an empty `Markup`, so the line renders as nothing at all rather than an empty bullet.
-
-Now the two shapes the line can take:
+Read it from the top. Every name becomes a profile link first, and `escape(name)` inside `_profile_link` is what lets us return `Markup` at the end without opening an injection hole: the only unescaped HTML in the result is HTML we wrote ourselves. If nobody liked the post we return an empty `Markup`, so the line renders as nothing at all rather than an empty bullet. Now the two shapes the line can take:
 
 {lang=python,line-numbers=on,starting-line-number=84}
 ```
@@ -4543,9 +4531,7 @@ Then teach `_post_extras` about likes. It already gathers a post's comments and 
 # markua-end-insert
 ```
 
-The first query is the same join the view used, so the server-rendered line and the live one agree by construction.
-
-Then one more lookup, and the three new keys:
+The first query is the same join the view used, so the server-rendered line and the live one agree by construction. Then one more lookup, and the three new keys:
 
 {lang=python,line-numbers=on,starting-line-number=131}
 ```
@@ -4599,9 +4585,7 @@ body {
 }
 ```
 
-The colours are named once, as custom properties on `:root`, and every rule below reaches for the name rather than the hex. The page itself goes the soft blue-grey FriendFeed used.
-
-Next the top bar and the wordmark:
+The colours are named once, as custom properties on `:root`, and every rule below reaches for the name rather than the hex. The page itself goes the soft blue-grey FriendFeed used. Next the top bar and the wordmark:
 
 {lang=css,line-numbers=on,starting-line-number=15}
 ```
@@ -4639,9 +4623,7 @@ A white bar with a thin border underneath, and a heavy blue wordmark, which is m
 }
 ```
 
-`.ff-bar` is the blue "Home" strip that will sit over the feed, and the cards lose Bootstrap's shadow in favour of a one-pixel border, so entries read as a list rather than a stack of panels.
-
-Now the type sizes and link colours:
+`.ff-bar` is the blue "Home" strip that will sit over the feed, and the cards lose Bootstrap's shadow in favour of a one-pixel border, so entries read as a list rather than a stack of panels. Now the type sizes and link colours:
 
 {lang=css,line-numbers=on,starting-line-number=43}
 ```
@@ -4667,9 +4649,7 @@ a {
 }
 ```
 
-The author and the post text read slightly larger than everything under them, which is the whole hierarchy of a feed entry, and links go FriendFeed blue.
-
-Then the likes and comments:
+The author and the post text read slightly larger than everything under them, which is the whole hierarchy of a feed entry, and links go FriendFeed blue. Then the likes and comments:
 
 {lang=css,line-numbers=on,starting-line-number=64}
 ```
@@ -4695,9 +4675,7 @@ Then the likes and comments:
 }
 ```
 
-The `likers-more` and `comments-more` links are the expanders we will wire up in JavaScript shortly, styled as plain blue text with a pointer.
-
-Then the timestamps and the action row:
+The `likers-more` and `comments-more` links are the expanders we will wire up in JavaScript shortly, styled as plain blue text with a pointer. Then the timestamps and the action row:
 
 {lang=css,line-numbers=on,starting-line-number=85}
 ```
@@ -4721,9 +4699,7 @@ time.timeago {
 }
 ```
 
-`.ff-meta` is the row of small text links under every post, "time - Comment - Like", with the time muted and the actions blue.
-
-And the last rule, which is the one to look at twice:
+`.ff-meta` is the row of small text links under every post, "time - Comment - Like", with the time muted and the actions blue. And the last rule, which is the one to look at twice:
 
 {lang=css,line-numbers=on,starting-line-number=103}
 ```
@@ -4768,9 +4744,7 @@ Two pieces of behaviour are still missing, and they have something in common. Th
   }
 ```
 
-The header comment is the contract: this file exposes three functions on `window` so that `broadcast.js` can draw a card exactly the way the server does. `esc` is the smallest possible HTML escaper, and everything below leans on it.
-
-Now the first of the three:
+The header comment is the contract: this file exposes three functions on `window` so that `broadcast.js` can draw a card exactly the way the server does. `esc` is the smallest possible HTML escaper, and everything below leans on it. Now the first of the three:
 
 {lang=js,line-numbers=on,starting-line-number=20}
 ```
@@ -4814,9 +4788,7 @@ Now the likes line, which is the same argument again:
     });
 ```
 
-Same defaults as the Python, three names shown and a collapse past five, and every name becomes a profile link before anything else happens.
-
-Then the short list:
+Same defaults as the Python, three names shown and a collapse past five, and every name becomes a profile link before anything else happens. Then the short list:
 
 {lang=js,line-numbers=on,starting-line-number=51}
 ```
@@ -4833,9 +4805,7 @@ Then the short list:
     }
 ```
 
-Up to five names we write them all out, with the "and" before the last one.
-
-And the long one:
+Up to five names we write them all out, with the "and" before the last one. And the long one:
 
 {lang=js,line-numbers=on,starting-line-number=62}
 ```
@@ -4851,9 +4821,7 @@ And the long one:
   }
 ```
 
-Read `renderLikesLine` side by side with the Python `likes_line` and it is the same function twice: same defaults of three and five, same "and" before the last name, same two spans past the threshold. Keeping a pair like this in step is a real maintenance cost, and it is worth paying only where the two renderers genuinely have to produce identical output. This is one of those places, because a like can update a card that Jinja drew or a card that JavaScript drew, and it must not matter which.
-
-Now the timestamps, and the three exports:
+Read `renderLikesLine` side by side with the Python `likes_line` and it is the same function twice: same defaults of three and five, same "and" before the last name, same two spans past the threshold. Keeping a pair like this in step is a real maintenance cost, and it is worth paying only where the two renderers genuinely have to produce identical output. This is one of those places, because a like can update a card that Jinja drew or a card that JavaScript drew, and it must not matter which. Now the timestamps, and the three exports:
 
 {lang=js,line-numbers=on,starting-line-number=73}
 ```
@@ -4892,9 +4860,7 @@ Finally, one click handler for the whole page. It starts with the Comment link:
     }
 ```
 
-Clicking Comment finds the card the link lives in, reveals that card's comment form, and puts the cursor in the box, so one click is enough to start typing.
-
-Then the photo control:
+Clicking Comment finds the card the link lives in, reveals that card's comment form, and puts the cursor in the box, so one click is enough to start typing. Then the photo control:
 
 {lang=js,line-numbers=on,starting-line-number=98}
 ```
@@ -4910,9 +4876,7 @@ Then the photo control:
     }
 ```
 
-Add photos does the same trick for the file input in the composer, then hides itself, since there is nothing left for it to do.
-
-Then the two expanders:
+Add photos does the same trick for the file input in the composer, then hides itself, since there is nothing left for it to do. Then the two expanders:
 
 {lang=js,line-numbers=on,starting-line-number=109}
 ```
@@ -4938,9 +4902,7 @@ Then the two expanders:
 
 One listener on `document` handles all four interactions, and that is not laziness. Cards arrive from three directions now: rendered by Jinja on load, appended by infinite scroll, and prepended by SSE. If we attached handlers to each button we would have to re-attach them every time a card appeared, and forgetting once means a dead link with no error. Listening on `document` and asking `e.target.closest(...)` which control was clicked means a card works the moment it exists, no matter who created it.
 
-Expanding the likes is then just swapping which of the two spans carries `d-none`, exactly as `likes_line` set them up.
-
-Last, the first pass over the timestamps, once the page has loaded:
+Expanding the likes is then just swapping which of the two spans carries `d-none`, exactly as `likes_line` set them up. Last, the first pass over the timestamps, once the page has loaded:
 
 {lang=js,line-numbers=on,starting-line-number=128}
 ```
@@ -4989,9 +4951,7 @@ The navbar is doing very little for us: a dead wordmark and two flat links. Let'
 <!-- markua-end-insert -->
 ```
 
-The brand now links to `post_app.home`, so the wordmark behaves the way every wordmark on the web behaves. The `navbar-toggler` and the `collapse` wrapper are the Bootstrap pattern for a nav that turns into a hamburger on a narrow screen.
-
-Then the links themselves:
+The brand now links to `post_app.home`, so the wordmark behaves the way every wordmark on the web behaves. The `navbar-toggler` and the `collapse` wrapper are the Bootstrap pattern for a nav that turns into a hamburger on a narrow screen. Then the links themselves:
 
 {lang=html,line-numbers=on,starting-line-number=9}
 ```
@@ -5207,9 +5167,7 @@ document.addEventListener("DOMContentLoaded", function () {
 // markua-end-insert
 ```
 
-The two flags are new. `loading` will stop us firing a second request while one is in flight, and `exhausted` will remember that the server has nothing more to give.
-
-Then the counting and the parsing:
+The two flags are new. `loading` will stop us firing a second request while one is in flight, and `exhausted` will remember that the server has nothing more to give. Then the counting and the parsing:
 
 {lang=js,line-numbers=on,starting-line-number=13}
 ```
@@ -5236,9 +5194,7 @@ Then the counting and the parsing:
 // markua-end-insert
 ```
 
-`currentCount` uses `:scope >` so it counts only the feed's own direct children, not any nested element that happens to carry a post id. In `appendCards` we parse the HTML into a detached div first, then move only the cards we actually want into a document fragment. The dedupe check matters more than it looks: SSE can prepend a post while you are scrolling, which shifts every offset by one, and without this you would see the same post twice.
-
-Then the append itself:
+`currentCount` uses `:scope >` so it counts only the feed's own direct children, not any nested element that happens to carry a post id. In `appendCards` we parse the HTML into a detached div first, then move only the cards we actually want into a document fragment. The dedupe check matters more than it looks: SSE can prepend a post while you are scrolling, which shifts every offset by one, and without this you would see the same post twice. Then the append itself:
 
 {lang=js,line-numbers=on,starting-line-number=33}
 ```
@@ -5280,9 +5236,7 @@ Now the loader and the observer:
 // markua-end-insert
 ```
 
-The `loading` guard stops the observer firing three requests while one is in flight, and `exhausted` disconnects the observer for good once the server returns nothing, so we stop asking.
-
-Then the end of the chain:
+The `loading` guard stops the observer firing three requests while one is in flight, and `exhausted` disconnects the observer for good once the server returns nothing, so we stop asking. Then the end of the chain:
 
 {lang=js,line-numbers=on,starting-line-number=56}
 ```
@@ -5297,9 +5251,7 @@ Then the end of the chain:
 // markua-end-insert
 ```
 
-The `.catch` with a `.finally` is the important pairing: on a network blip we swallow the error but still clear `loading`, so scrolling again retries instead of the page deciding it has reached the end forever.
-
-And the observer that drives it all:
+The `.catch` with a `.finally` is the important pairing: on a network blip we swallow the error but still clear `loading`, so scrolling again retries instead of the page deciding it has reached the end forever. And the observer that drives it all:
 
 {lang=js,line-numbers=on,starting-line-number=64}
 ```
@@ -5529,9 +5481,7 @@ def test_likes_line_one():
     assert '<a href="/user/alice">alice</a> liked this' in s
 ```
 
-Four tests walk the helper from nothing to a crowd. With no likers it prints an empty string, so an unliked post shows nothing at all. With one name it links that name and adds "liked this".
-
-Then the two that matter:
+Four tests walk the helper from nothing to a crowd. With no likers it prints an empty string, so an unliked post shows nothing at all. With one name it links that name and adds "liked this". Then the two that matter:
 
 {lang=python,line-numbers=on,starting-line-number=29}
 ```

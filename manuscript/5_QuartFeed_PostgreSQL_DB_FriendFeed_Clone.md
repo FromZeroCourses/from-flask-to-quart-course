@@ -5054,7 +5054,7 @@ Now the card itself, which is where all of this comes together. Open `templates/
 
 That `onerror` sets itself to `null` first, which matters: if the fallback image were also missing, the handler would fire again on its own replacement and loop forever.
 
-Next, the action row replacing the bare timestamp link, and the likes line under it:
+Next, the action row replacing the bare timestamp link:
 
 {lang=html,line-numbers=on,starting-line-number=24}
 ```
